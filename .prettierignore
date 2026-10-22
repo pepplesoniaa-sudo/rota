@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+.next/
+.expo/
+*.log
+pnpm-lock.yaml
+docs/Rota-PRD-v1.1.md

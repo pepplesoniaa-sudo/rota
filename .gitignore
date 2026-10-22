@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dist/
+coverage/
+.expo/
+apps/mobile/ios/
+apps/mobile/android/
+*.log
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
