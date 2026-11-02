@@ -1,5 +1,7 @@
 import { DateTime } from 'luxon';
-import { AppError } from '@rota/shared';
+import { AppError, AvailabilityResponse, ReplaceAvailabilityBody } from '@rota/shared';
+import { dbShard0, getShardClient } from '../../db';
+import { getTeamShardIndex } from '../../data/router';
 
 export interface ShiftSegment {
   dayOfWeek: number; // 1 = Monday ... 7 = Sunday
@@ -17,6 +19,83 @@ export interface AvailabilityBlockLike {
   dayOfWeek: number;
   startMinute: number;
   endMinute: number;
+}
+
+export interface RawAvailabilityBlockInput {
+  dayOfWeek: number;
+  startMinute: number;
+  endMinute: number;
+}
+
+/**
+ * Normalizes input blocks by splitting cross-midnight blocks into two and merging
+ * touching or overlapping blocks on the same day (FR-19).
+ * Enforces maximum of 28 blocks (L-36) and validates endMinute > startMinute.
+ */
+export function normalizeAndMergeBlocks(
+  rawBlocks: RawAvailabilityBlockInput[],
+): AvailabilityBlockLike[] {
+  const splitBlocks: AvailabilityBlockLike[] = [];
+
+  for (const b of rawBlocks) {
+    if (b.endMinute <= b.startMinute) {
+      throw new AppError('VALIDATION_FAILED', 400, 'Block end must be after block start');
+    }
+
+    if (b.endMinute > 1440) {
+      splitBlocks.push({
+        dayOfWeek: b.dayOfWeek,
+        startMinute: b.startMinute,
+        endMinute: 1440,
+      });
+      const nextDay = b.dayOfWeek === 7 ? 1 : b.dayOfWeek + 1;
+      splitBlocks.push({
+        dayOfWeek: nextDay,
+        startMinute: 0,
+        endMinute: b.endMinute - 1440,
+      });
+    } else {
+      splitBlocks.push({
+        dayOfWeek: b.dayOfWeek,
+        startMinute: b.startMinute,
+        endMinute: b.endMinute,
+      });
+    }
+  }
+
+  const merged: AvailabilityBlockLike[] = [];
+
+  for (let day = 1; day <= 7; day++) {
+    const dayBlocks = splitBlocks
+      .filter((b) => b.dayOfWeek === day)
+      .sort((a, b) => a.startMinute - b.startMinute);
+
+    if (dayBlocks.length === 0) continue;
+
+    const first = dayBlocks[0];
+    if (!first) continue;
+    const cur = { ...first };
+
+    for (let i = 1; i < dayBlocks.length; i++) {
+      const next = dayBlocks[i];
+      if (!next) continue;
+      if (next.startMinute <= cur.endMinute) {
+        cur.endMinute = Math.max(cur.endMinute, next.endMinute);
+      } else {
+        merged.push({ ...cur });
+        cur.startMinute = next.startMinute;
+        cur.endMinute = next.endMinute;
+        cur.dayOfWeek = next.dayOfWeek;
+      }
+    }
+    merged.push(cur);
+  }
+
+  if (merged.length > 28) {
+    throw new AppError('VALIDATION_FAILED', 400, 'Cannot exceed 28 availability blocks');
+  }
+
+  return merged;
 }
 
 /**
@@ -134,4 +213,124 @@ export function validateAvailability(params: {
   }
 
   return { isAvailable: true, uncoveredIntervals: [] };
+}
+
+export async function replaceAvailability(params: {
+  teamId: string;
+  userId: string;
+  body: ReplaceAvailabilityBody;
+}): Promise<AvailabilityResponse> {
+  const { teamId, userId, body } = params;
+
+  // 1. Verify team exists
+  const team = await dbShard0.team.findUnique({
+    where: { id: teamId, deletedAt: null },
+    select: { shardIndex: true },
+  });
+
+  if (!team) {
+    throw new AppError('NOT_FOUND', 404, 'Team not found');
+  }
+
+  // 2. Verify membership
+  const membership = await dbShard0.membership.findUnique({
+    where: { teamId_userId: { teamId, userId } },
+    select: { status: true },
+  });
+
+  if (!membership || membership.status !== 'ACTIVE') {
+    throw new AppError('NOT_FOUND', 404, 'Team not found');
+  }
+
+  // 3. Normalize, split cross-midnight, merge touching/overlapping
+  const merged = normalizeAndMergeBlocks(body.blocks);
+
+  // 4. Shard transaction to replace blocks
+  const shardIndex = team.shardIndex ?? (await getTeamShardIndex(teamId));
+  const shardClient = getShardClient(shardIndex);
+
+  await shardClient.$transaction(async (tx) => {
+    await tx.availabilityBlock.deleteMany({
+      where: { teamId, userId },
+    });
+
+    if (merged.length > 0) {
+      await tx.availabilityBlock.createMany({
+        data: merged.map((b) => ({
+          teamId,
+          userId,
+          dayOfWeek: b.dayOfWeek,
+          startMinute: b.startMinute,
+          endMinute: b.endMinute,
+        })),
+      });
+    }
+  });
+
+  const saved = await shardClient.availabilityBlock.findMany({
+    where: { teamId, userId },
+    orderBy: [{ dayOfWeek: 'asc' }, { startMinute: 'asc' }],
+  });
+
+  return {
+    blocks: saved.map((b) => ({
+      id: b.id,
+      teamId: b.teamId,
+      userId: b.userId,
+      dayOfWeek: b.dayOfWeek,
+      startMinute: b.startMinute,
+      endMinute: b.endMinute,
+      createdAt: b.createdAt.toISOString(),
+    })),
+  };
+}
+
+export async function getAvailability(params: {
+  teamId: string;
+  userId: string;
+  role: 'OWNER' | 'MANAGER' | 'STAFF';
+  targetUserId?: string;
+}): Promise<AvailabilityResponse> {
+  const { teamId, userId, role, targetUserId } = params;
+
+  const team = await dbShard0.team.findUnique({
+    where: { id: teamId, deletedAt: null },
+    select: { shardIndex: true },
+  });
+
+  if (!team) {
+    throw new AppError('NOT_FOUND', 404, 'Team not found');
+  }
+
+  // Staff cannot view other members' availability (PRD 5.1)
+  if (role === 'STAFF') {
+    if (targetUserId && targetUserId !== userId) {
+      throw new AppError('FORBIDDEN', 403, 'Staff cannot view other members availability');
+    }
+  }
+
+  const queryUserId = role === 'STAFF' ? userId : (targetUserId ?? undefined);
+
+  const shardIndex = team.shardIndex ?? (await getTeamShardIndex(teamId));
+  const shardClient = getShardClient(shardIndex);
+
+  const blocks = await shardClient.availabilityBlock.findMany({
+    where: {
+      teamId,
+      userId: queryUserId,
+    },
+    orderBy: [{ dayOfWeek: 'asc' }, { startMinute: 'asc' }],
+  });
+
+  return {
+    blocks: blocks.map((b) => ({
+      id: b.id,
+      teamId: b.teamId,
+      userId: b.userId,
+      dayOfWeek: b.dayOfWeek,
+      startMinute: b.startMinute,
+      endMinute: b.endMinute,
+      createdAt: b.createdAt.toISOString(),
+    })),
+  };
 }
