@@ -134,7 +134,13 @@ export const PublishShiftsBody = z
     to: z.string().regex(localDateRegex).optional(),
     shiftIds: z.array(z.string().uuid()).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => Boolean((data.from && data.to) || (data.shiftIds && data.shiftIds.length > 0)),
+    {
+      message: 'Either (from and to) or non-empty shiftIds must be provided',
+    },
+  );
 
 export type PublishShiftsBody = z.infer<typeof PublishShiftsBody>;
 
