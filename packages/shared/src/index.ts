@@ -3,3 +3,4 @@ export * from './errors';
 export * from './money';
 export * from './schemas/auth';
 export * from './schemas/team';
+export * from './schemas/shift';

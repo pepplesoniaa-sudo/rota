@@ -68,13 +68,20 @@ export class AppError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
   readonly retryAfter?: number;
+  readonly details?: Record<string, unknown>;
 
-  constructor(code: ErrorCode, status: number, message: string, options?: { retryAfter?: number }) {
+  constructor(
+    code: ErrorCode,
+    status: number,
+    message: string,
+    options?: { retryAfter?: number; [key: string]: unknown },
+  ) {
     super(message);
     this.name = 'AppError';
     this.code = code;
     this.status = status;
     this.retryAfter = options?.retryAfter;
+    this.details = options;
     Object.setPrototypeOf(this, AppError.prototype);
   }
 }

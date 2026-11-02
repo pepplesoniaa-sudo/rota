@@ -161,5 +161,11 @@ describe('SEC-1: Route Auth Declaration and Closed Public List', () => {
 
     const meTeamsPath = path.join(apiRoot, 'app/v1/me/teams/route.ts');
     expect(fs.readFileSync(meTeamsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const shiftsPath = path.join(apiRoot, 'app/v1/teams/[teamId]/shifts/route.ts');
+    expect(fs.readFileSync(shiftsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const shiftDetailPath = path.join(apiRoot, 'app/v1/teams/[teamId]/shifts/[shiftId]/route.ts');
+    expect(fs.readFileSync(shiftDetailPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
   });
 });
