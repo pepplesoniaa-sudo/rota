@@ -5,3 +5,4 @@ export * from './schemas/auth';
 export * from './schemas/team';
 export * from './schemas/shift';
 export * from './schemas/availability';
+export * from './schemas/swap';

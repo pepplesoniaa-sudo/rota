@@ -179,5 +179,38 @@ describe('SEC-1: Route Auth Declaration and Closed Public List', () => {
 
     const copyWeekPath = path.join(apiRoot, 'app/v1/teams/[teamId]/shifts/copy-week/route.ts');
     expect(fs.readFileSync(copyWeekPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const swapsPath = path.join(apiRoot, 'app/v1/teams/[teamId]/swaps/route.ts');
+    expect(fs.readFileSync(swapsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const swapAcceptPath = path.join(
+      apiRoot,
+      'app/v1/teams/[teamId]/swaps/[swapId]/accept/route.ts',
+    );
+    expect(fs.readFileSync(swapAcceptPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const swapDeclinePath = path.join(
+      apiRoot,
+      'app/v1/teams/[teamId]/swaps/[swapId]/decline/route.ts',
+    );
+    expect(fs.readFileSync(swapDeclinePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const swapApprovePath = path.join(
+      apiRoot,
+      'app/v1/teams/[teamId]/swaps/[swapId]/approve/route.ts',
+    );
+    expect(fs.readFileSync(swapApprovePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const swapRejectPath = path.join(
+      apiRoot,
+      'app/v1/teams/[teamId]/swaps/[swapId]/reject/route.ts',
+    );
+    expect(fs.readFileSync(swapRejectPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const swapCancelPath = path.join(
+      apiRoot,
+      'app/v1/teams/[teamId]/swaps/[swapId]/cancel/route.ts',
+    );
+    expect(fs.readFileSync(swapCancelPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
   });
 });
