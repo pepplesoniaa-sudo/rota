@@ -107,4 +107,9 @@ describe('SEC-1: Route Auth Declaration and Closed Public List', () => {
     const confirmPath = path.join(apiRoot, 'app/v1/auth/password-reset/confirm/route.ts');
     expect(fs.readFileSync(confirmPath, 'utf-8')).toMatch(/auth:\s*['"]public['"]/);
   });
+
+  it('verifies POST /v1/teams declares auth: access', () => {
+    const teamsPath = path.join(apiRoot, 'app/v1/teams/route.ts');
+    expect(fs.readFileSync(teamsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+  });
 });

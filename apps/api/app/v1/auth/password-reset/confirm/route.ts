@@ -21,4 +21,3 @@ export const POST = withApi(
     return { ok: true };
   },
 );
-
