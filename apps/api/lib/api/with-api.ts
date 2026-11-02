@@ -8,6 +8,7 @@ import { env } from '../config/env';
 import { markUserWrite, shouldReadPrimary } from '../data/router';
 import { runInRequestContext, TenantScope } from '../data/scope';
 import { logger } from '../log';
+import { applyRateLimit, getClientIp } from '../rate-limit';
 
 export type RouteAuth = 'public' | 'access' | 'refresh' | 'webhook';
 
@@ -50,9 +51,7 @@ export function withApi<TResult, TBody = unknown, TQuery = unknown>(
     const resolvedParams = await context.params;
 
     try {
-      // 1. Rate limiting placeholder (runs before team lookup)
-
-      // 2. Auth check (L-15, SEC-1, SEC-3)
+      // 1. Auth check (L-15, SEC-1, SEC-3)
       let userId: string | undefined;
       if (options.auth === 'access') {
         const authHeader = req.headers.get('authorization');
@@ -62,6 +61,49 @@ export function withApi<TResult, TBody = unknown, TQuery = unknown>(
         const token = authHeader.slice(7).trim();
         const verified = await verifyAccessToken(token);
         userId = verified.userId;
+      }
+
+      // 2. Rate limiting (PRD 7.10, L-34, FR-44)
+      if (userId) {
+        const limit = options.rateLimit?.limit ?? 120;
+        const windowSeconds = options.rateLimit?.windowSeconds ?? 60;
+        const rlResult = await applyRateLimit({
+          scope: 'general',
+          id: userId,
+          limit,
+          windowSeconds,
+        });
+        if (!rlResult.allowed) {
+          throw new AppError('RATE_LIMITED', 429, 'Too many requests. Please slow down.', {
+            retryAfter: rlResult.retryAfter,
+          });
+        }
+      } else if (options.rateLimit) {
+        const ip = getClientIp(req);
+        const rlResult = await applyRateLimit({
+          scope: 'ip',
+          id: ip,
+          limit: options.rateLimit.limit,
+          windowSeconds: options.rateLimit.windowSeconds,
+        });
+        if (!rlResult.allowed) {
+          throw new AppError('RATE_LIMITED', 429, 'Too many requests. Please slow down.', {
+            retryAfter: rlResult.retryAfter,
+          });
+        }
+      } else if (options.auth === 'webhook') {
+        const ip = getClientIp(req);
+        const rlResult = await applyRateLimit({
+          scope: 'webhook',
+          id: ip,
+          limit: 300,
+          windowSeconds: 60,
+        });
+        if (!rlResult.allowed) {
+          throw new AppError('RATE_LIMITED', 429, 'Too many requests. Please slow down.', {
+            retryAfter: rlResult.retryAfter,
+          });
+        }
       }
 
       // 3. Body validation
@@ -104,6 +146,8 @@ export function withApi<TResult, TBody = unknown, TQuery = unknown>(
       let scope: TenantScope | undefined;
       if (teamId) {
         scope = { type: 'team', teamId };
+      } else if (userId) {
+        scope = { type: 'user', userId, teamIds: [] };
       }
 
       // 6. Role check if options.roles is specified (PRD 5.1, B-18, B-19)

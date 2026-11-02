@@ -143,5 +143,23 @@ describe('SEC-1: Route Auth Declaration and Closed Public List', () => {
       'app/v1/teams/[teamId]/ownership-transfer/route.ts',
     );
     expect(fs.readFileSync(ownershipTransferPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const mePath = path.join(apiRoot, 'app/v1/me/route.ts');
+    expect(fs.readFileSync(mePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const meSettingsPath = path.join(apiRoot, 'app/v1/me/settings/route.ts');
+    expect(fs.readFileSync(meSettingsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const mePushTokensPath = path.join(apiRoot, 'app/v1/me/push-tokens/route.ts');
+    expect(fs.readFileSync(mePushTokensPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const mePushTokenDeletePath = path.join(
+      apiRoot,
+      'app/v1/me/push-tokens/[pushTokenId]/route.ts',
+    );
+    expect(fs.readFileSync(mePushTokenDeletePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const meTeamsPath = path.join(apiRoot, 'app/v1/me/teams/route.ts');
+    expect(fs.readFileSync(meTeamsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
   });
 });

@@ -275,3 +275,27 @@ export const TransferOwnershipResponse = z
   .strict();
 
 export type TransferOwnershipResponse = z.infer<typeof TransferOwnershipResponse>;
+
+/**
+ * Team switcher item and response (FR-08, PRD 7.2, CS-10).
+ */
+export const MyTeamsItem = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    timezone: z.string(),
+    role: z.enum(['OWNER', 'MANAGER', 'STAFF']),
+    weekStartsOn: z.number().int().min(1).max(7),
+    joinedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type MyTeamsItem = z.infer<typeof MyTeamsItem>;
+
+export const MyTeamsResponse = z
+  .object({
+    teams: z.array(MyTeamsItem),
+  })
+  .strict();
+
+export type MyTeamsResponse = z.infer<typeof MyTeamsResponse>;

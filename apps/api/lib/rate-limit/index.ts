@@ -92,7 +92,57 @@ export async function incrementRateLimit(params: RateLimitCheckParams): Promise<
 }
 
 /**
+ * Atomically increments and checks rate limit counter in Redis (PRD 7.3, L-34, FR-44).
+ * Redis key: rl:{scope}:{id}:{windowSeconds}
+ * If count > limit, returns allowed: false with remaining: 0 and retryAfter.
+ * Fails open if Redis is unreachable.
+ */
+export async function applyRateLimit(params: RateLimitCheckParams): Promise<RateLimitResult> {
+  const key = `rl:${params.scope}:${params.id}:${params.windowSeconds}`;
+
+  try {
+    if (typeof redis.multi !== 'function') {
+      return { allowed: true, remaining: params.limit };
+    }
+
+    const multi = redis.multi();
+    multi.incr(key);
+    multi.ttl(key);
+    const results = await multi.exec();
+
+    if (!results || !results[0]) {
+      return { allowed: true, remaining: params.limit - 1 };
+    }
+
+    const count = typeof results[0][1] === 'number' ? results[0][1] : 1;
+    let ttl = typeof results[1]?.[1] === 'number' ? results[1][1] : -1;
+
+    if (ttl === -1) {
+      await redis.expire(key, params.windowSeconds);
+      ttl = params.windowSeconds;
+    }
+
+    if (count > params.limit) {
+      return {
+        allowed: false,
+        remaining: 0,
+        retryAfter: ttl > 0 ? ttl : params.windowSeconds,
+      };
+    }
+
+    return {
+      allowed: true,
+      remaining: Math.max(0, params.limit - count),
+    };
+  } catch (err) {
+    logger.warn({ err, key }, 'Redis rate limit apply failed; failing open');
+    return { allowed: true, remaining: 1 };
+  }
+}
+
+/**
  * Resets rate limit counter (e.g. on successful login).
+
  */
 export async function resetRateLimit(
   scope: string,

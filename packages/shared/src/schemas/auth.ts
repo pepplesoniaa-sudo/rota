@@ -159,3 +159,116 @@ export const PasswordResetConfirmBody = z
   .strict();
 
 export type PasswordResetConfirmBody = z.infer<typeof PasswordResetConfirmBody>;
+
+/**
+ * Me response (FR-08, PRD 7.2, CS-10).
+ */
+export const MeResponse = z
+  .object({
+    user: z
+      .object({
+        id: z.string().uuid(),
+        email: z.string().email(),
+        displayName: z.string(),
+        createdAt: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type MeResponse = z.infer<typeof MeResponse>;
+
+/**
+ * User Settings response (PRD 7.2, CS-10).
+ */
+export const SettingsResponse = z
+  .object({
+    settings: z
+      .object({
+        userId: z.string().uuid(),
+        timezone: z.string(),
+        quietHoursEnabled: z.boolean(),
+        quietStartMinute: z.number().int().min(0).max(1439),
+        quietEndMinute: z.number().int().min(0).max(1439),
+        notifyShiftChanges: z.boolean(),
+        notifySwaps: z.boolean(),
+        notifyMemberJoined: z.boolean(),
+        notifyShiftReminders: z.boolean(),
+        quietAfterNightShift: z.boolean(),
+        use24HourClock: z.boolean(),
+        weekStartsOn: z.number().int().min(1).max(7),
+        version: z.number().int().positive(),
+        updatedAt: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type SettingsResponse = z.infer<typeof SettingsResponse>;
+
+/**
+ * Update User Settings request body (PRD 7.2, CS-10).
+ */
+export const UpdateSettingsBody = z
+  .object({
+    timezone: z
+      .string()
+      .refine(isValidIanaTimezone, {
+        message: 'Invalid IANA timezone',
+      })
+      .optional(),
+    quietHoursEnabled: z.boolean().optional(),
+    quietStartMinute: z.number().int().min(0).max(1439).optional(),
+    quietEndMinute: z.number().int().min(0).max(1439).optional(),
+    notifyShiftChanges: z.boolean().optional(),
+    notifySwaps: z.boolean().optional(),
+    notifyMemberJoined: z.boolean().optional(),
+    notifyShiftReminders: z.boolean().optional(),
+    quietAfterNightShift: z.boolean().optional(),
+    use24HourClock: z.boolean().optional(),
+    weekStartsOn: z.number().int().min(1).max(7).optional(),
+    version: z.number().int().positive(),
+  })
+  .strict();
+
+export type UpdateSettingsBody = z.infer<typeof UpdateSettingsBody>;
+
+/**
+ * Register push token request body (PRD 7.2, CS-10).
+ */
+export const RegisterPushTokenBody = z
+  .object({
+    expoPushToken: z.string().trim().min(1).max(255),
+    platform: z.enum(['IOS', 'ANDROID']),
+    deviceId: z.string().trim().min(1).max(100),
+  })
+  .strict();
+
+export type RegisterPushTokenBody = z.infer<typeof RegisterPushTokenBody>;
+
+export const PushTokenResponse = z
+  .object({
+    pushToken: z
+      .object({
+        id: z.string().uuid(),
+        expoPushToken: z.string(),
+        platform: z.enum(['IOS', 'ANDROID']),
+        deviceId: z.string(),
+        createdAt: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type PushTokenResponse = z.infer<typeof PushTokenResponse>;
+
+/**
+ * Push token path parameters (PRD 7.2, CS-10).
+ */
+export const PushTokenParams = z
+  .object({
+    pushTokenId: z.string().uuid(),
+  })
+  .strict();
+
+export type PushTokenParams = z.infer<typeof PushTokenParams>;
