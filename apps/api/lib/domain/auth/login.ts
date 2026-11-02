@@ -11,10 +11,7 @@ import { checkRateLimit, incrementRateLimit, resetRateLimit } from '../../rate-l
  * - Returns identical 401 AUTH_INVALID_CREDENTIALS whether email exists or not (FR-02)
  * - On success, issues new access token (15m) and refresh token (30d) (L-15, L-33)
  */
-export async function loginUser(
-  input: LoginBody,
-  clientIp: string,
-): Promise<LoginResponse> {
+export async function loginUser(input: LoginBody, clientIp: string): Promise<LoginResponse> {
   const normalizedEmail = input.email.trim().toLowerCase();
   const rlId = `${normalizedEmail}:${clientIp}`;
   const WINDOW_SECONDS = 15 * 60; // 15 minutes (L-34, FR-02)
@@ -97,4 +94,3 @@ export async function loginUser(
     },
   };
 }
-

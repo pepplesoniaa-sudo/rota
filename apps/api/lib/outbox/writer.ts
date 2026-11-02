@@ -20,27 +20,34 @@ export interface OutboxEntry {
   processedAt: Date | null;
 }
 
+export type TxWithOutbox = {
+  outbox: {
+    create: (args: Prisma.OutboxCreateArgs) => Promise<unknown>;
+    updateMany?: (args: Prisma.OutboxUpdateManyArgs) => Promise<unknown>;
+  };
+};
+
 /**
  * Writes an Outbox row in the current transaction.
  * A-5 / A-6 / DB-12: Must run in the same transaction as state changes.
  * NEVER call queue.add inside the transaction callback.
  */
 export async function writeOutbox(
-  tx: Prisma.TransactionClient,
+  tx: Prisma.TransactionClient | TxWithOutbox,
   params: WriteOutboxParams,
 ): Promise<OutboxEntry> {
   const validatedPayload = validateOutboxPayload(params.kind, params.payload);
 
-  const entry = await tx.outbox.create({
+  const entry = (await tx.outbox.create({
     data: {
       kind: params.kind,
       sourceKey: params.sourceKey,
       payload: validatedPayload as Prisma.InputJsonValue,
       teamId: params.teamId,
     },
-  });
+  })) as OutboxEntry;
 
-  return entry as OutboxEntry;
+  return entry;
 }
 
 /**
@@ -97,7 +104,9 @@ export async function dispatchOutboxEntry(entry: OutboxEntry): Promise<void> {
  * Marks an Outbox row as processed in the database.
  */
 export async function markOutboxProcessed(
-  db: Prisma.TransactionClient,
+  db:
+    | Prisma.TransactionClient
+    | { outbox: { updateMany: (args: Prisma.OutboxUpdateManyArgs) => Promise<unknown> } },
   sourceKey: string,
 ): Promise<void> {
   await db.outbox.updateMany({

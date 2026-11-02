@@ -15,4 +15,3 @@ export async function logoutAllDevices(userId: string): Promise<{ ok: true }> {
   await revokeAllUserRefreshTokens(userId);
   return { ok: true };
 }
-

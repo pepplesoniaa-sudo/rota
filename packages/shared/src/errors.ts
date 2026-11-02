@@ -69,12 +69,7 @@ export class AppError extends Error {
   readonly status: number;
   readonly retryAfter?: number;
 
-  constructor(
-    code: ErrorCode,
-    status: number,
-    message: string,
-    options?: { retryAfter?: number },
-  ) {
+  constructor(code: ErrorCode, status: number, message: string, options?: { retryAfter?: number }) {
     super(message);
     this.name = 'AppError';
     this.code = code;

@@ -36,9 +36,7 @@ export interface RateLimitResult {
  * Redis key: rl:{scope}:{id}:{windowSeconds}
  * Fails open if Redis is unreachable (PRD 7.3).
  */
-export async function checkRateLimit(
-  params: RateLimitCheckParams,
-): Promise<RateLimitResult> {
+export async function checkRateLimit(params: RateLimitCheckParams): Promise<RateLimitResult> {
   const key = `rl:${params.scope}:${params.id}:${params.windowSeconds}`;
 
   try {
@@ -67,9 +65,7 @@ export async function checkRateLimit(
 /**
  * Increments rate limit attempt counter in Redis (e.g. on failed login attempt).
  */
-export async function incrementRateLimit(
-  params: RateLimitCheckParams,
-): Promise<number> {
+export async function incrementRateLimit(params: RateLimitCheckParams): Promise<number> {
   const key = `rl:${params.scope}:${params.id}:${params.windowSeconds}`;
 
   try {
@@ -110,4 +106,3 @@ export async function resetRateLimit(
     logger.warn({ err, key }, 'Redis rate limit reset failed; ignoring');
   }
 }
-

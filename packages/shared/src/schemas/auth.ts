@@ -128,3 +128,34 @@ export type LogoutBody = z.infer<typeof LogoutBody>;
  */
 export const EmptyBody = z.object({}).strict();
 export type EmptyBody = z.infer<typeof EmptyBody>;
+
+/**
+ * Password reset request body (FR-06, PRD 7.2, DB-4, CS-10).
+ */
+export const PasswordResetRequestBody = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .email('Invalid email address')
+      .toLowerCase()
+      .max(255, 'Email cannot exceed 255 characters'),
+  })
+  .strict();
+
+export type PasswordResetRequestBody = z.infer<typeof PasswordResetRequestBody>;
+
+/**
+ * Password reset confirm body (FR-06, PRD 7.2, CS-10).
+ */
+export const PasswordResetConfirmBody = z
+  .object({
+    token: z.string().min(1, 'Token is required').max(255),
+    password: z
+      .string()
+      .min(10, 'Password must be at least 10 characters')
+      .max(128, 'Password cannot exceed 128 characters'),
+  })
+  .strict();
+
+export type PasswordResetConfirmBody = z.infer<typeof PasswordResetConfirmBody>;

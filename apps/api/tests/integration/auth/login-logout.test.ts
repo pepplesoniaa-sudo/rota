@@ -76,13 +76,7 @@ vi.mock('../../../lib/db', () => {
     }),
 
     update: vi.fn(
-      async ({
-        where,
-        data,
-      }: {
-        where: { id: string };
-        data: Partial<MockRefreshToken>;
-      }) => {
+      async ({ where, data }: { where: { id: string }; data: Partial<MockRefreshToken> }) => {
         const found = mockRefreshTokens.find((t) => t.id === where.id);
         if (found) Object.assign(found, data);
         return found ? { ...found } : null;
@@ -407,9 +401,7 @@ describe('FR-02 & FR-03: User Login and Logout', () => {
       expect(await res.json()).toEqual({ ok: true });
 
       // Verifying rotation fails with 401 AUTH_REFRESH_REVOKED
-      await expect(
-        rotateRefreshToken({ rawToken: tokenSession.rawToken }),
-      ).rejects.toMatchObject({
+      await expect(rotateRefreshToken({ rawToken: tokenSession.rawToken })).rejects.toMatchObject({
         code: 'AUTH_REFRESH_REVOKED',
         status: 401,
       });
@@ -437,16 +429,12 @@ describe('FR-02 & FR-03: User Login and Logout', () => {
       expect(await res.json()).toEqual({ ok: true });
 
       // Both tokens are revoked
-      await expect(
-        rotateRefreshToken({ rawToken: session1.rawToken }),
-      ).rejects.toMatchObject({
+      await expect(rotateRefreshToken({ rawToken: session1.rawToken })).rejects.toMatchObject({
         code: 'AUTH_REFRESH_REVOKED',
         status: 401,
       });
 
-      await expect(
-        rotateRefreshToken({ rawToken: session2.rawToken }),
-      ).rejects.toMatchObject({
+      await expect(rotateRefreshToken({ rawToken: session2.rawToken })).rejects.toMatchObject({
         code: 'AUTH_REFRESH_REVOKED',
         status: 401,
       });
@@ -464,4 +452,3 @@ describe('FR-02 & FR-03: User Login and Logout', () => {
     });
   });
 });
-

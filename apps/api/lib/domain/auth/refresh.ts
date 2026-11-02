@@ -23,4 +23,3 @@ export async function refreshSession(input: RefreshBody): Promise<RefreshRespons
     refreshToken: result.rawRefreshToken,
   };
 }
-

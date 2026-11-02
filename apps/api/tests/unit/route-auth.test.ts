@@ -99,4 +99,12 @@ describe('SEC-1: Route Auth Declaration and Closed Public List', () => {
     const refreshPath = path.join(apiRoot, 'app/v1/auth/refresh/route.ts');
     expect(fs.readFileSync(refreshPath, 'utf-8')).toMatch(/auth:\s*['"]refresh['"]/);
   });
+
+  it('verifies POST /v1/auth/password-reset/request and /confirm declare auth: public', () => {
+    const requestPath = path.join(apiRoot, 'app/v1/auth/password-reset/request/route.ts');
+    expect(fs.readFileSync(requestPath, 'utf-8')).toMatch(/auth:\s*['"]public['"]/);
+
+    const confirmPath = path.join(apiRoot, 'app/v1/auth/password-reset/confirm/route.ts');
+    expect(fs.readFileSync(confirmPath, 'utf-8')).toMatch(/auth:\s*['"]public['"]/);
+  });
 });

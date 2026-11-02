@@ -20,4 +20,3 @@ export const POST = withApi(
     return loginUser(body, clientIp);
   },
 );
-

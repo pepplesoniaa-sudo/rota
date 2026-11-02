@@ -329,4 +329,3 @@ describe('POST /v1/auth/refresh (FR-03)', () => {
     expect(dataExtra.error.code).toBe('VALIDATION_FAILED');
   });
 });
-

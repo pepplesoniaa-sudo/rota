@@ -18,4 +18,3 @@ export const POST = withApi(
     return logoutAllDevices(userId ?? '');
   },
 );
-
