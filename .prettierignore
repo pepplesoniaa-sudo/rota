@@ -6,3 +6,6 @@ coverage/
 *.log
 pnpm-lock.yaml
 docs/Rota-PRD-v1.1.md
+docs/decisions.md
+Rota.md
+.agents/

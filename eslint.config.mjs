@@ -26,7 +26,9 @@ export default tseslint.config(
     },
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ['vitest.config.ts'],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -77,6 +79,44 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+  // B-21: Ban $queryRawUnsafe entirely, and ban $queryRaw outside teamQuery
+  {
+    files: ['apps/api/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          property: '$queryRawUnsafe',
+          message: '$queryRawUnsafe is strictly banned per B-21 and PRD 7.10.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['apps/api/**/*.{ts,tsx}'],
+    ignores: ['apps/api/lib/data/router.ts', 'apps/api/tests/**'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          property: '$queryRaw',
+          message:
+            '$queryRaw is banned outside teamQuery per B-21. Use teamQuery(teamId, sql) instead.',
+        },
+      ],
+    },
+  },
+  // k6 load test scripts runtime globals
+  {
+    files: ['infra/k6/**/*.js'],
+    languageOptions: {
+      globals: {
+        __ENV: 'readonly',
+        open: 'readonly',
+        __VU: 'readonly',
+      },
     },
   },
 );

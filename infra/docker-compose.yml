@@ -1,0 +1,279 @@
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    container_name: rota-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: rota-api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s0_primary?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_0_PRIMARY_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s0_primary?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_0_REPLICA_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s0_replica?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_1_PRIMARY_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s1_primary?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_1_REPLICA_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s1_replica?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - DIRECT_DATABASE_URL=postgresql://rota_owner:rota_owner_secret@pg-s0-primary:5432/rota_s0
+      - SHARD_1_DIRECT_URL=postgresql://rota_owner:rota_owner_secret@pg-s1-primary:5432/rota_s1
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=placeholder-jwt-secret-at-least-32-characters-long
+      - CARD_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - FLW_SECRET_KEY=FLWSECK_TEST-placeholder
+      - FLW_PUBLIC_KEY=FLWPUBK_TEST-placeholder
+      - FLW_SECRET_HASH=placeholder-webhook-hash
+    depends_on:
+      - pgbouncer
+      - redis
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 512M
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: rota-worker
+    restart: unless-stopped
+    command: ['pnpm', '--filter', 'api', 'exec', 'tsx', 'worker/index.ts']
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s0_primary?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_0_PRIMARY_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s0_primary?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_0_REPLICA_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s0_replica?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_1_PRIMARY_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s1_primary?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - SHARD_1_REPLICA_URL=postgresql://rota_app:rota_app_secret@pgbouncer:6432/s1_replica?pgbouncer=true&connection_limit=15&pool_timeout=10
+      - DIRECT_DATABASE_URL=postgresql://rota_owner:rota_owner_secret@pg-s0-primary:5432/rota_s0
+      - SHARD_1_DIRECT_URL=postgresql://rota_owner:rota_owner_secret@pg-s1-primary:5432/rota_s1
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=placeholder-jwt-secret-at-least-32-characters-long
+      - CARD_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - FLW_SECRET_KEY=FLWSECK_TEST-placeholder
+      - FLW_PUBLIC_KEY=FLWPUBK_TEST-placeholder
+      - FLW_SECRET_HASH=placeholder-webhook-hash
+    depends_on:
+      - pgbouncer
+      - redis
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 384M
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1
+    container_name: rota-pgbouncer
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:6432:6432'
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    depends_on:
+      - pg-s0-primary
+      - pg-s0-replica
+      - pg-s1-primary
+      - pg-s1-replica
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+
+  pg-s0-primary:
+    image: postgres:16-alpine
+    container_name: rota-pg-s0-primary
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5432:5432'
+    environment:
+      - POSTGRES_DB=rota_s0
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres_root_secret
+    volumes:
+      - pg_s0_primary_data:/var/lib/postgresql/data
+      - ./postgres/init-primary-s0.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command:
+      - 'postgres'
+      - '-c'
+      - 'max_connections=100'
+      - '-c'
+      - 'shared_buffers=128MB'
+      - '-c'
+      - 'wal_level=replica'
+      - '-c'
+      - 'max_wal_senders=10'
+      - '-c'
+      - 'max_replication_slots=10'
+      - '-c'
+      - 'hot_standby=on'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 384M
+
+  pg-s0-replica:
+    image: postgres:16-alpine
+    container_name: rota-pg-s0-replica
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5433:5432'
+    environment:
+      - PGUSER=postgres
+      - PGPASSWORD=postgres_root_secret
+    volumes:
+      - pg_s0_replica_data:/var/lib/postgresql/data
+      - ./postgres/setup-replica-s0.sh:/docker-entrypoint-initdb.d/setup-replica.sh:ro
+    depends_on:
+      - pg-s0-primary
+    command:
+      - 'postgres'
+      - '-c'
+      - 'max_connections=100'
+      - '-c'
+      - 'shared_buffers=128MB'
+      - '-c'
+      - 'hot_standby=on'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+  pg-s1-primary:
+    image: postgres:16-alpine
+    container_name: rota-pg-s1-primary
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5434:5432'
+    environment:
+      - POSTGRES_DB=rota_s1
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres_root_secret
+    volumes:
+      - pg_s1_primary_data:/var/lib/postgresql/data
+      - ./postgres/init-primary-s1.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command:
+      - 'postgres'
+      - '-c'
+      - 'max_connections=100'
+      - '-c'
+      - 'shared_buffers=128MB'
+      - '-c'
+      - 'wal_level=replica'
+      - '-c'
+      - 'max_wal_senders=10'
+      - '-c'
+      - 'max_replication_slots=10'
+      - '-c'
+      - 'hot_standby=on'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 384M
+
+  pg-s1-replica:
+    image: postgres:16-alpine
+    container_name: rota-pg-s1-replica
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5435:5432'
+    environment:
+      - PGUSER=postgres
+      - PGPASSWORD=postgres_root_secret
+    volumes:
+      - pg_s1_replica_data:/var/lib/postgresql/data
+      - ./postgres/setup-replica-s1.sh:/docker-entrypoint-initdb.d/setup-replica.sh:ro
+    depends_on:
+      - pg-s1-primary
+    command:
+      - 'postgres'
+      - '-c'
+      - 'max_connections=100'
+      - '-c'
+      - 'shared_buffers=128MB'
+      - '-c'
+      - 'hot_standby=on'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    container_name: rota-redis
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis_data:/data
+    command:
+      - 'redis-server'
+      - '--appendonly'
+      - 'yes'
+      - '--maxmemory-policy'
+      - 'noeviction'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: rota-mailpit
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8025:8025'
+      - '127.0.0.1:1025:1025'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+
+  bull-board:
+    image: node:22-alpine
+    container_name: rota-bull-board
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3001:3000'
+    environment:
+      - REDIS_URL=redis://redis:6379
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pg_s0_primary_data:
+  pg_s0_replica_data:
+  pg_s1_primary_data:
+  pg_s1_replica_data:
+  redis_data:

@@ -1,0 +1,20 @@
+:80 {
+    log {
+        output stdout
+        format filter {
+            wrap json
+            fields {
+                uri replace /i/[^/?#]+ /i/[REDACTED]
+                uri replace /r/[^/?#]+ /r/[REDACTED]
+            }
+        }
+    }
+
+    # Pass headers to API
+    reverse_proxy api:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+

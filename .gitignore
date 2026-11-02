@@ -10,3 +10,6 @@ apps/mobile/android/
 .env.local
 .env.*.local
 *.tsbuildinfo
+
+agent.md
+Rota.md

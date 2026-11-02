@@ -63,3 +63,23 @@ export interface AppErrorShape {
     requestId?: string;
   };
 }
+
+export class AppError extends Error {
+  readonly code: ErrorCode;
+  readonly status: number;
+  readonly retryAfter?: number;
+
+  constructor(
+    code: ErrorCode,
+    status: number,
+    message: string,
+    options?: { retryAfter?: number },
+  ) {
+    super(message);
+    this.name = 'AppError';
+    this.code = code;
+    this.status = status;
+    this.retryAfter = options?.retryAfter;
+    Object.setPrototypeOf(this, AppError.prototype);
+  }
+}

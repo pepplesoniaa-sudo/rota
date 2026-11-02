@@ -4,6 +4,25 @@ This file is append-only. New decisions are added at the top, dated, with the qu
 
 ---
 
+## 2026-11-01: Ledger idempotency key formats
+
+**Question:** PRD v1.1 sets a ledger `idempotencyKey` format only for `PAYMENT_CONFIRMED` (`payment:{providerTxId}`, PRD 9). Which formats should the other entry types use?
+
+**Answer (Rox, 2026-11-01):** Approved as proposed:
+
+| Entry type | `LedgerEntry.idempotencyKey` |
+|---|---|
+| `PAYMENT_CONFIRMED` | `payment:{providerTxId}` (PRD 9, unchanged) |
+| `CHARGE_SUBSCRIPTION`, `CHARGE_SEAT_PRORATION`, `CHARGE_UPGRADE_PRORATION` | `charge:{chargeId}` |
+| `PAYMENT_FAILED` (verified failure or decline) | `payment-failed:{chargeAttemptId}` |
+| `PAYMENT_FAILED` (overdue charge) | `payment-failed:overdue:{chargeId}` |
+| `REFUND_ISSUED` | `refund:{providerRefundId}` |
+| `REVERSAL` | `reversal:{reversedEntryId}` |
+
+**Applied in:** `.agents/rules/money-and-billing.md` MB-9.
+
+---
+
 ### 2026-10-22: Client UI Dependencies Approved (GIT-7, GIT-9)
 
 - **Question:** Are `expo-font`, `@expo-google-fonts/inter`, and `expo-system-ui` approved as client dependencies in `apps/mobile` for embedding static Inter fonts at build time and synchronizing root background color?
