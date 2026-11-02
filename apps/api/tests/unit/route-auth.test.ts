@@ -112,4 +112,27 @@ describe('SEC-1: Route Auth Declaration and Closed Public List', () => {
     const teamsPath = path.join(apiRoot, 'app/v1/teams/route.ts');
     expect(fs.readFileSync(teamsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
   });
+
+  it('verifies team invites and members routes declare correct auth', () => {
+    const invitesPath = path.join(apiRoot, 'app/v1/teams/[teamId]/invites/route.ts');
+    expect(fs.readFileSync(invitesPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const revokePath = path.join(apiRoot, 'app/v1/teams/[teamId]/invites/[inviteId]/route.ts');
+    expect(fs.readFileSync(revokePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const publicInvitePath = path.join(apiRoot, 'app/v1/invites/[token]/route.ts');
+    expect(fs.readFileSync(publicInvitePath, 'utf-8')).toMatch(/auth:\s*['"]public['"]/);
+
+    const acceptInvitePath = path.join(apiRoot, 'app/v1/invites/[token]/accept/route.ts');
+    expect(fs.readFileSync(acceptInvitePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const membersPath = path.join(apiRoot, 'app/v1/teams/[teamId]/members/route.ts');
+    expect(fs.readFileSync(membersPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const memberRolePath = path.join(apiRoot, 'app/v1/teams/[teamId]/members/[userId]/route.ts');
+    expect(fs.readFileSync(memberRolePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const leavePath = path.join(apiRoot, 'app/v1/teams/[teamId]/leave/route.ts');
+    expect(fs.readFileSync(leavePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+  });
 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v7 as uuidv7 } from 'uuid';
 import { ZodSchema } from 'zod';
 import { AppError } from '@rota/shared';
+import { checkTeamNotReadOnly, checkTeamRole } from '../auth/permissions';
 import { verifyAccessToken } from '../auth/jwt';
 import { env } from '../config/env';
 import { markUserWrite, shouldReadPrimary } from '../data/router';
@@ -105,7 +106,34 @@ export function withApi<TResult, TBody = unknown, TQuery = unknown>(
         scope = { type: 'team', teamId };
       }
 
-      // 6. Invoke handler inside AsyncLocalStorage tenant scope & read-routing context
+      // 6. Role check if options.roles is specified (PRD 5.1, B-18, B-19)
+      let userRole: 'OWNER' | 'MANAGER' | 'STAFF' | undefined;
+      if (options.roles) {
+        if (!userId) {
+          throw new AppError('AUTH_TOKEN_EXPIRED', 401, 'Unauthorized');
+        }
+        if (!teamId) {
+          throw new AppError('VALIDATION_FAILED', 400, 'Missing teamId parameter');
+        }
+        userRole = await checkTeamRole(userId, teamId, options.roles);
+      }
+
+      // 7. Read-only team enforcement on writes (PRD 5.1, B-14, FR-25)
+      const isWriteMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+      if (isWriteMethod && teamId) {
+        const pathname = req.nextUrl.pathname;
+        const isExempt =
+          pathname.endsWith('/leave') ||
+          pathname.endsWith('/ownership-transfer') ||
+          pathname.includes('/billing/') ||
+          (req.method.toUpperCase() === 'DELETE' && pathname.endsWith(`/teams/${teamId}`));
+
+        if (!isExempt) {
+          await checkTeamNotReadOnly(teamId);
+        }
+      }
+
+      // 8. Invoke handler inside AsyncLocalStorage tenant scope & read-routing context
       const result = await runInRequestContext(
         {
           requestId,
@@ -122,12 +150,12 @@ export function withApi<TResult, TBody = unknown, TQuery = unknown>(
             query: parsedQuery,
             userId,
             teamId,
+            role: userRole,
           });
         },
       );
 
-      // 7. Successful write triggers RYOW marker (PRD 7.5, AGENTS.md A-9)
-      const isWriteMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+      // 9. Successful write triggers RYOW marker (PRD 7.5, AGENTS.md A-9)
       if (isWriteMethod && userId) {
         await markUserWrite(userId);
       }

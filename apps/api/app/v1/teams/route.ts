@@ -22,4 +22,3 @@ export const POST = withApi(
     return createTeam(body, userId);
   },
 );
-

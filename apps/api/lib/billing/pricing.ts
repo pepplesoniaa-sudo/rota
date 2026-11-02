@@ -65,4 +65,3 @@ export function calculateMonthlyPriceCents(plan: Plan, activeSeats: number): num
 
   return total;
 }
-

@@ -452,4 +452,3 @@ describe('POST /v1/teams (FR-07)', () => {
     expect(data.error.code).toBe('AUTH_TOKEN_EXPIRED');
   });
 });
-
