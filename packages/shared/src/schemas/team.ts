@@ -208,3 +208,70 @@ export const MemberListResponse = z
   .strict();
 
 export type MemberListResponse = z.infer<typeof MemberListResponse>;
+
+/**
+ * Team update request body (PRD 7.2, CS-10).
+ * Owner can update name and/or timezone.
+ */
+export const UpdateTeamBody = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(2, 'Team name must be at least 2 characters')
+      .max(80, 'Team name cannot exceed 80 characters')
+      .optional(),
+    timezone: z
+      .string()
+      .refine(isValidIanaTimezone, {
+        message: 'Invalid IANA timezone',
+      })
+      .optional(),
+  })
+  .strict()
+  .refine((data) => data.name !== undefined || data.timezone !== undefined, {
+    message: 'At least one of name or timezone must be provided',
+  });
+
+export type UpdateTeamBody = z.infer<typeof UpdateTeamBody>;
+
+/**
+ * Full team details response (PRD 7.2).
+ */
+export const TeamDetailsResponse = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    timezone: z.string(),
+    shardIndex: z.number().int().min(0).max(1),
+    weekStartsOn: z.number().int().min(1).max(7),
+    ownerUserId: z.string().uuid(),
+    role: z.enum(['OWNER', 'MANAGER', 'STAFF']),
+    memberCount: z.number().int().min(1),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export type TeamDetailsResponse = z.infer<typeof TeamDetailsResponse>;
+
+/**
+ * Transfer ownership request body (FR-13, PRD 7.2, CS-10).
+ */
+export const TransferOwnershipBody = z
+  .object({
+    targetUserId: z.string().uuid(),
+    password: z.string().min(1, 'Password is required'),
+  })
+  .strict();
+
+export type TransferOwnershipBody = z.infer<typeof TransferOwnershipBody>;
+
+export const TransferOwnershipResponse = z
+  .object({
+    ok: z.boolean(),
+    teamId: z.string().uuid(),
+    newOwnerUserId: z.string().uuid(),
+  })
+  .strict();
+
+export type TransferOwnershipResponse = z.infer<typeof TransferOwnershipResponse>;

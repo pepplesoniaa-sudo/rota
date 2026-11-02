@@ -75,4 +75,3 @@ export function calculateProrationFromDates(params: {
     periodSeconds: Number(periodSecondsBig),
   });
 }
-

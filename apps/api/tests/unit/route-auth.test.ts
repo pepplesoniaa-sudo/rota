@@ -134,5 +134,14 @@ describe('SEC-1: Route Auth Declaration and Closed Public List', () => {
 
     const leavePath = path.join(apiRoot, 'app/v1/teams/[teamId]/leave/route.ts');
     expect(fs.readFileSync(leavePath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const teamDetailsPath = path.join(apiRoot, 'app/v1/teams/[teamId]/route.ts');
+    expect(fs.readFileSync(teamDetailsPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
+
+    const ownershipTransferPath = path.join(
+      apiRoot,
+      'app/v1/teams/[teamId]/ownership-transfer/route.ts',
+    );
+    expect(fs.readFileSync(ownershipTransferPath, 'utf-8')).toMatch(/auth:\s*['"]access['"]/);
   });
 });
