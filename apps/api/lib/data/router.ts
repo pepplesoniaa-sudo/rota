@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { Prisma, NotificationType } from '@prisma/client';
 import { AppError, ERROR_CODES } from '@rota/shared';
 import { dbShard0, getShardClient } from '../db';
 import { logger } from '../log';
@@ -198,4 +198,33 @@ export async function teamQuery<T = unknown>(teamId: string, query: Prisma.Sql):
 
   const client = await getShardDbForTeam(teamId);
   return client.$queryRaw<T>(query);
+}
+
+export interface LockedDueNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  teamId?: string | null;
+}
+
+/**
+ * Queries and locks due SCHEDULED notifications for a recipient using FOR UPDATE SKIP LOCKED.
+ * PRD 6.2: Runs in system scope.
+ */
+export async function lockDueNotifications(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  now: Date,
+): Promise<LockedDueNotification[]> {
+  const rows = (await tx.$queryRaw`
+    SELECT id, type, title, body, team_id AS "teamId"
+    FROM notification
+    WHERE user_id = ${userId}::uuid
+      AND status = 'SCHEDULED'
+      AND scheduled_for <= ${now}
+    ORDER BY scheduled_for ASC
+    FOR UPDATE SKIP LOCKED
+  `) as LockedDueNotification[];
+  return rows;
 }
