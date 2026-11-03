@@ -7,6 +7,13 @@ import { handleNotifyDeliver } from './jobs/notify/deliver';
 import { handleNotifyRelease } from './jobs/notify/release';
 import { handleNotifyReschedule } from './jobs/notify/reschedule';
 import { handleSwapsExpire } from './jobs/swaps/expire';
+import { handleBillingWebhook } from './jobs/billing/webhook';
+import { handleBillingCharge } from './jobs/billing/charge';
+import { handleBillingOverdueScan } from './jobs/billing/overdue-scan';
+import { handleBillingGraceStep } from './jobs/billing/grace-step';
+import { handleBillingRenewalScan } from './jobs/billing/renewal-scan';
+import { handleBillingRenew } from './jobs/billing/renew';
+import { handleBillingReconcile } from './jobs/billing/reconcile';
 import { getQueue } from './queues';
 
 export async function startWorker() {
@@ -74,7 +81,39 @@ export async function startWorker() {
     logger.error({ jobId: job?.id, err }, 'Job in swaps queue failed');
   });
 
-  // 4. Register repeatable outbox.sweep jobs for s0 and s1 every 60s (PRD 6.2)
+  // 4. Register billing queue worker
+  const billingWorker = new Worker(
+    'billing',
+    async (job) => {
+      switch (job.name) {
+        case 'billing.webhook':
+          return handleBillingWebhook(job.data);
+        case 'billing.charge':
+          return handleBillingCharge(job.data);
+        case 'billing.overdue-scan':
+          return handleBillingOverdueScan(job.data);
+        case 'billing.grace-step':
+          return handleBillingGraceStep(job.data);
+        case 'billing.renewal-scan':
+          return handleBillingRenewalScan(job.data);
+        case 'billing.renew':
+          return handleBillingRenew(job.data);
+        case 'billing.reconcile':
+          return handleBillingReconcile(job.data);
+        default:
+          logger.warn({ jobName: job.name }, 'Unknown job in billing queue');
+      }
+    },
+    {
+      connection: { url: env.REDIS_URL },
+    },
+  );
+
+  billingWorker.on('failed', (job, err) => {
+    logger.error({ jobId: job?.id, err }, 'Job in billing queue failed');
+  });
+
+  // 5. Register repeatable outbox.sweep jobs for s0 and s1 every 60s (PRD 6.2)
   try {
     const outboxQueue = getQueue('outbox');
     await outboxQueue.add(
@@ -98,7 +137,7 @@ export async function startWorker() {
     logger.warn({ err }, 'Could not register repeatable outbox.sweep jobs in Redis at boot');
   }
 
-  // 5. Register repeatable swaps.expire job every 5 minutes (PRD 6.2)
+  // 6. Register repeatable swaps.expire job every 5 minutes (PRD 6.2)
   try {
     const swapsQueue = getQueue('swaps');
     await swapsQueue.add(
@@ -114,15 +153,55 @@ export async function startWorker() {
     logger.warn({ err }, 'Could not register repeatable swaps.expire job in Redis at boot');
   }
 
+  // 7. Register repeatable billing jobs (PRD 6.2)
+  try {
+    const billingQueue = getQueue('billing');
+    // billing.renewal-scan: every 15 min
+    await billingQueue.add(
+      'billing.renewal-scan',
+      {},
+      {
+        repeat: { every: 900_000 },
+        jobId: 'repeatable-billing-renewal-scan',
+      },
+    );
+    // billing.overdue-scan: every 15 min
+    await billingQueue.add(
+      'billing.overdue-scan',
+      {},
+      {
+        repeat: { every: 900_000 },
+        jobId: 'repeatable-billing-overdue-scan',
+      },
+    );
+    // billing.reconcile: every 30 min
+    await billingQueue.add(
+      'billing.reconcile',
+      {},
+      {
+        repeat: { every: 1_800_000 },
+        jobId: 'repeatable-billing-reconcile',
+      },
+    );
+    logger.info('Registered repeatable billing jobs (renewal-scan, overdue-scan, reconcile)');
+  } catch (err) {
+    logger.warn({ err }, 'Could not register repeatable billing jobs in Redis at boot');
+  }
+
   const shutdown = async () => {
     logger.info('Shutting down Rota background worker...');
-    await Promise.all([outboxWorker.close(), notifyWorker.close(), swapsWorker.close()]);
+    await Promise.all([
+      outboxWorker.close(),
+      notifyWorker.close(),
+      swapsWorker.close(),
+      billingWorker.close(),
+    ]);
   };
 
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGINT', () => void shutdown());
 
-  return { outboxWorker, notifyWorker, swapsWorker, shutdown };
+  return { outboxWorker, notifyWorker, swapsWorker, billingWorker, shutdown };
 }
 
 // Auto-run if executed directly via tsx worker/index.ts

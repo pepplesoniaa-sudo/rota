@@ -213,7 +213,12 @@ export interface LockedDueNotification {
  * PRD 6.2: Runs in system scope.
  */
 export async function lockDueNotifications(
-  tx: Prisma.TransactionClient,
+  tx: {
+    $queryRaw: <T = unknown>(
+      query: TemplateStringsArray | Prisma.Sql,
+      ...values: unknown[]
+    ) => Promise<T>;
+  },
   userId: string,
   now: Date,
 ): Promise<LockedDueNotification[]> {

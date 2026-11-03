@@ -7,3 +7,4 @@ export * from './schemas/shift';
 export * from './schemas/availability';
 export * from './schemas/swap';
 export * from './schemas/feed';
+export * from './schemas/billing';

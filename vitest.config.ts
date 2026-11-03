@@ -13,6 +13,11 @@ if (fs.existsSync(envPath)) {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(rootDir, 'apps/api'),
+    },
+  },
   test: {
     environment: 'node',
     globals: true,
