@@ -14,6 +14,7 @@ import { handleBillingGraceStep } from './jobs/billing/grace-step';
 import { handleBillingRenewalScan } from './jobs/billing/renewal-scan';
 import { handleBillingRenew } from './jobs/billing/renew';
 import { handleBillingReconcile } from './jobs/billing/reconcile';
+import { startReplicaLagProbe } from '../lib/data/router';
 import { getQueue } from './queues';
 
 export async function startWorker() {
@@ -188,8 +189,12 @@ export async function startWorker() {
     logger.warn({ err }, 'Could not register repeatable billing jobs in Redis at boot');
   }
 
+  // 8. Start replica lag probe timer (PRD 6.1, line 529)
+  const stopLagProbe = startReplicaLagProbe(5000);
+
   const shutdown = async () => {
     logger.info('Shutting down Rota background worker...');
+    stopLagProbe();
     await Promise.all([
       outboxWorker.close(),
       notifyWorker.close(),

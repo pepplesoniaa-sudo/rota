@@ -5,7 +5,7 @@ import { AppError } from '@rota/shared';
 import { checkTeamNotReadOnly, checkTeamRole } from '../auth/permissions';
 import { verifyAccessToken } from '../auth/jwt';
 import { env } from '../config/env';
-import { markUserWrite, shouldReadPrimary } from '../data/router';
+import { getTeamShardIndex, markUserWrite, shouldReadPrimary } from '../data/router';
 import { runInRequestContext, TenantScope } from '../data/scope';
 import { logger } from '../log';
 import { applyRateLimit, getClientIp } from '../rate-limit';
@@ -136,10 +136,12 @@ export function withApi<TResult, TBody = unknown, TQuery = unknown>(
       // 5. Determine read routing flags and tenant scope (PRD 7.5, 7.10)
       const teamId =
         typeof resolvedParams['teamId'] === 'string' ? resolvedParams['teamId'] : undefined;
+      const shardIndex = teamId ? await getTeamShardIndex(teamId) : undefined;
       const headerFlag = req.headers.get('x-read-primary') === '1';
       const readPrimary = await shouldReadPrimary({
         userId,
         headerFlag,
+        shardIndex,
       });
       const readSource: 'primary' | 'replica' = readPrimary ? 'primary' : 'replica';
 

@@ -21,6 +21,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    setupFiles: ['./apps/mobile/tests/setup.ts'],
+    setupFiles: [path.resolve(rootDir, 'apps/mobile/tests/setup.ts')],
   },
 });

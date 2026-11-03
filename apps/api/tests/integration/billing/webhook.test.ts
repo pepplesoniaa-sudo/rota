@@ -369,11 +369,11 @@ describe('Phase 5: Flutterwave Webhook Processing (FR-42, B-9, B-10, B-11, MB-11
     expect(body.received).toBe(true);
 
     expect(mockWebhookEvents).toHaveLength(1);
-    expect(mockWebhookEvents[0].providerEventKey).toBe('98765');
-    expect(mockWebhookEvents[0].status).toBe('RECEIVED');
+    expect(mockWebhookEvents[0]?.providerEventKey).toBe('98765');
+    expect(mockWebhookEvents[0]?.status).toBe('RECEIVED');
     expect(enqueuedJobs).toHaveLength(1);
-    expect(enqueuedJobs[0].queue).toBe('billing');
-    expect(enqueuedJobs[0].name).toBe('billing.webhook');
+    expect(enqueuedJobs[0]?.queue).toBe('billing');
+    expect(enqueuedJobs[0]?.name).toBe('billing.webhook');
   });
 
   it('Exit Criteria 2 / MB-11 / FR-42: duplicate webhook test produces exactly one ledger entry', async () => {
@@ -413,16 +413,16 @@ describe('Phase 5: Flutterwave Webhook Processing (FR-42, B-9, B-10, B-11, MB-11
     // First processing run
     const result1 = await handleBillingWebhook({ webhookEventId: webhookEvent.id });
     expect(result1.processed).toBe(true);
-    expect(mockCharges[0].status).toBe('PAID');
-    expect(mockChargeAttempts[0].status).toBe('PAID');
-    expect(mockChargeAttempts[0].providerTxId).toBe('98765');
+    expect(mockCharges[0]?.status).toBe('PAID');
+    expect(mockChargeAttempts[0]?.status).toBe('PAID');
+    expect(mockChargeAttempts[0]?.providerTxId).toBe('98765');
     expect(mockPaymentMethods).toHaveLength(1);
 
     // Exactly one PAYMENT_CONFIRMED ledger entry created
     expect(mockLedgerEntries).toHaveLength(1);
-    expect(mockLedgerEntries[0].type).toBe(LedgerEntryType.PAYMENT_CONFIRMED);
-    expect(mockLedgerEntries[0].amountCents).toBe(-2000); // Negative for money received (PRD 8.7)
-    expect(mockLedgerEntries[0].idempotencyKey).toBe('payment:98765');
+    expect(mockLedgerEntries[0]?.type).toBe(LedgerEntryType.PAYMENT_CONFIRMED);
+    expect(mockLedgerEntries[0]?.amountCents).toBe(-2000); // Negative for money received (PRD 8.7)
+    expect(mockLedgerEntries[0]?.idempotencyKey).toBe('payment:98765');
 
     // 2. Duplicate webhook event arriving at the route
     const reqDuplicate = new NextRequest('http://localhost:3000/v1/webhooks/flutterwave', {
@@ -453,7 +453,8 @@ describe('Phase 5: Flutterwave Webhook Processing (FR-42, B-9, B-10, B-11, MB-11
 
   it('B-11: double payment records PAYMENT_CONFIRMED and handles gracefully', async () => {
     // Charge is already paid by attempt 1
-    mockCharges[0].status = 'PAID';
+    const charge0 = mockCharges[0];
+    if (charge0) charge0.status = 'PAID';
     // Create attempt 2
     const attempt2: MockChargeAttempt = {
       id: '018f3a2b-0000-7000-8000-000000000005',
@@ -530,10 +531,10 @@ describe('Phase 5: Flutterwave Webhook Processing (FR-42, B-9, B-10, B-11, MB-11
 
     const result = await handleBillingWebhook({ webhookEventId: webhookEvent.id });
     expect(result.processed).toBe(false);
-    expect(mockCharges[0].status).toBe('PENDING'); // Not marked PAID
+    expect(mockCharges[0]?.status).toBe('PENDING'); // Not marked PAID
     expect(mockLedgerEntries).toHaveLength(0); // No ledger entry written
-    expect(mockWebhookEvents[0].status).toBe('FAILED');
-    expect(mockWebhookEvents[0].error).toContain('amount expected 2000, got 1000');
+    expect(mockWebhookEvents[0]?.status).toBe('FAILED');
+    expect(mockWebhookEvents[0]?.error).toContain('amount expected 2000, got 1000');
   });
 });
 

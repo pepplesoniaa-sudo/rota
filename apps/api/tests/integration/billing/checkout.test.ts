@@ -234,10 +234,10 @@ describe('Phase 5: Hosted Checkout & Billing History (FR-34, FR-35, B-11, B-16)'
     expect(body.txRef).toBe(`${chargeId}-1`);
 
     expect(mockChargeAttempts).toHaveLength(1);
-    expect(mockChargeAttempts[0].attemptNo).toBe(1);
-    expect(mockChargeAttempts[0].txRef).toBe(`${chargeId}-1`);
-    expect(mockChargeAttempts[0].method).toBe('CHECKOUT');
-    expect(mockChargeAttempts[0].amountCents).toBe(2000);
+    expect(mockChargeAttempts[0]?.attemptNo).toBe(1);
+    expect(mockChargeAttempts[0]?.txRef).toBe(`${chargeId}-1`);
+    expect(mockChargeAttempts[0]?.method).toBe('CHECKOUT');
+    expect(mockChargeAttempts[0]?.amountCents).toBe(2000);
   });
 
   it('B-11: subsequent checkout creates new ChargeAttempt with incremented attemptNo', async () => {
@@ -268,12 +268,13 @@ describe('Phase 5: Hosted Checkout & Billing History (FR-34, FR-35, B-11, B-16)'
     expect(body.checkoutUrl).toBe(`https://checkout.flutterwave.com/pay/${chargeId}-2`);
 
     expect(mockChargeAttempts).toHaveLength(2);
-    expect(mockChargeAttempts[1].attemptNo).toBe(2);
-    expect(mockChargeAttempts[1].txRef).toBe(`${chargeId}-2`);
+    expect(mockChargeAttempts[1]?.attemptNo).toBe(2);
+    expect(mockChargeAttempts[1]?.txRef).toBe(`${chargeId}-2`);
   });
 
   it('B-11: checkout on already PAID charge returns 400 VALIDATION_FAILED', async () => {
-    mockCharges[0].status = 'PAID';
+    const charge = mockCharges[0];
+    if (charge) charge.status = 'PAID';
 
     const req = new NextRequest(
       `http://localhost:3000/v1/teams/${teamId}/billing/charges/${chargeId}/checkout`,

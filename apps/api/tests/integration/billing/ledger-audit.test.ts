@@ -132,12 +132,12 @@ describe('Phase 5: Append-Only Ledger & Immutability Rules (Exit Criteria 3 / B-
     });
 
     expect(createdEntries).toHaveLength(4);
-    expect(createdEntries[0].amountCents).toBe(2000);
-    expect(createdEntries[0].idempotencyKey).toBe(`charge:${chargeId}`);
-    expect(createdEntries[1].amountCents).toBe(-2000);
-    expect(createdEntries[1].idempotencyKey).toBe('payment:flw-tx-12345');
-    expect(createdEntries[2].amountCents).toBe(0);
-    expect(createdEntries[3].type).toBe(LedgerEntryType.REVERSAL);
-    expect(createdEntries[3].reversesEntryId).toBe('entry-1');
+    expect(createdEntries[0]?.amountCents).toBe(2000);
+    expect(createdEntries[0]?.idempotencyKey).toBe(`charge:${chargeId}`);
+    expect(createdEntries[1]?.amountCents).toBe(-2000);
+    expect(createdEntries[1]?.idempotencyKey).toBe('payment:flw-tx-12345');
+    expect(createdEntries[2]?.amountCents).toBe(0);
+    expect(createdEntries[3]?.type).toBe(LedgerEntryType.REVERSAL);
+    expect(createdEntries[3]?.reversesEntryId).toBe('entry-1');
   });
 });

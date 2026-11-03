@@ -20,12 +20,21 @@ export function computeShardIndex(teamId: string): number {
  * or Shard 0 (global directory), falling back to computeShardIndex for new teams.
  */
 export async function getTeamShardIndex(teamId: string): Promise<number> {
+  let existingStatus: string | undefined;
   try {
     const cached = await redis.get(`team:${teamId}`);
     if (cached) {
-      const parsed = JSON.parse(cached) as { shardIndex?: number };
-      if (typeof parsed.shardIndex === 'number') {
-        return parsed.shardIndex;
+      try {
+        const parsed = JSON.parse(cached) as { shardIndex?: number; status?: string };
+        if (typeof parsed.shardIndex === 'number') {
+          return parsed.shardIndex;
+        }
+        if (typeof parsed.status === 'string') {
+          existingStatus = parsed.status;
+        }
+      } catch {
+        // Plain string status (e.g. 'ACTIVE' or 'READ_ONLY')
+        existingStatus = cached;
       }
     }
   } catch (err) {
@@ -42,7 +51,10 @@ export async function getTeamShardIndex(teamId: string): Promise<number> {
       try {
         await redis.set(
           `team:${teamId}`,
-          JSON.stringify({ shardIndex: team.shardIndex }),
+          JSON.stringify({
+            shardIndex: team.shardIndex,
+            ...(existingStatus ? { status: existingStatus } : {}),
+          }),
           'EX',
           300,
         );
@@ -92,7 +104,24 @@ export async function shouldReadPrimary(options: {
       }
       const lagMs = parseInt(lagStr, 10);
       if (Number.isNaN(lagMs) || lagMs > 2000) {
+        try {
+          await redis.set(`replica:degraded:${options.shardIndex}`, '1', 'EX', 60);
+        } catch {
+          // ignore
+        }
         return true;
+      }
+      if (lagMs >= 1000) {
+        const isDegraded = await redis.exists(`replica:degraded:${options.shardIndex}`);
+        if (isDegraded === 1) {
+          return true;
+        }
+      } else {
+        try {
+          await redis.del(`replica:degraded:${options.shardIndex}`);
+        } catch {
+          // ignore
+        }
       }
     }
 
@@ -232,4 +261,53 @@ export async function lockDueNotifications(
     FOR UPDATE SKIP LOCKED
   `) as LockedDueNotification[];
   return rows;
+}
+
+/**
+ * PRD 6.1 (line 529): Probes replication lag on a shard replica.
+ * Runs query on the replica:
+ * SELECT CASE WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0
+ *             ELSE EXTRACT(EPOCH FROM now() - pg_last_xact_replay_timestamp()) * 1000
+ *        END AS lag_ms
+ *
+ * Writes replica:lag:{shard} to Redis with a 15-second expiry (EX 15).
+ * Idle replica reports lag 0.
+ */
+export async function probeShardLag(shardIndex: number): Promise<number | null> {
+  const client = getShardClient(shardIndex);
+
+  try {
+    const result = await client.$queryRaw<Array<{ lag_ms: number | null }>>`
+      SELECT CASE
+        WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0
+        ELSE EXTRACT(EPOCH FROM now() - pg_last_xact_replay_timestamp()) * 1000
+      END AS lag_ms
+    `;
+
+    const rawLag = result[0]?.lag_ms ?? 0;
+    const lagMs = Math.max(0, Math.round(Number(rawLag) || 0));
+
+    await redis.set(`replica:lag:${shardIndex}`, String(lagMs), 'EX', 15);
+    return lagMs;
+  } catch (err) {
+    logger.debug({ err, shardIndex }, 'Replica lag probe error or replica unreachable');
+    return null;
+  }
+}
+
+/**
+ * Starts the 5-second replica lag timer per shard in the worker process.
+ * PRD 6.1 / PRD 7.5: Returns stop function.
+ */
+export function startReplicaLagProbe(intervalMs = 5000): () => void {
+  const probe = async () => {
+    await Promise.all([probeShardLag(0), probeShardLag(1)]);
+  };
+
+  void probe();
+  const timer = setInterval(() => void probe(), intervalMs);
+
+  return () => {
+    clearInterval(timer);
+  };
 }

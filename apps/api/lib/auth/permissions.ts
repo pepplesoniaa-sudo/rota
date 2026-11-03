@@ -76,42 +76,72 @@ export async function checkTeamRole(
   return role;
 }
 
+export interface TeamCacheData {
+  shardIndex?: number;
+  status?: string;
+}
+
 /**
  * Checks that a team is not in READ_ONLY status (PRD 5.1, B-14, FR-25).
  * When read-only, writes return 403 TEAM_READ_ONLY except for exempt endpoints.
  */
 export async function checkTeamNotReadOnly(teamId: string): Promise<void> {
   const cacheKey = `team:${teamId}`;
-  let cachedStatus: string | null = null;
+  let cachedRaw: string | null = null;
   try {
-    cachedStatus = await redis.get(cacheKey);
+    cachedRaw = await redis.get(cacheKey);
   } catch (err) {
     void err;
   }
 
-  if (cachedStatus === 'READ_ONLY') {
-    throw new AppError('TEAM_READ_ONLY', 403, 'Team is in read-only mode');
+  let status: string | undefined;
+  let shardIndex: number | undefined;
+
+  if (cachedRaw) {
+    if (cachedRaw === 'READ_ONLY') {
+      throw new AppError('TEAM_READ_ONLY', 403, 'Team is in read-only mode');
+    }
+    if (
+      cachedRaw === 'ACTIVE' ||
+      cachedRaw === 'PAST_DUE' ||
+      cachedRaw === 'TRIALING' ||
+      cachedRaw === 'CANCELED'
+    ) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(cachedRaw) as TeamCacheData;
+      status = parsed.status;
+      shardIndex = parsed.shardIndex;
+    } catch {
+      // not JSON
+    }
+
+    if (status === 'READ_ONLY') {
+      throw new AppError('TEAM_READ_ONLY', 403, 'Team is in read-only mode');
+    }
+    if (status && status !== 'READ_ONLY') {
+      return;
+    }
   }
 
-  if (!cachedStatus) {
-    const client = (
-      '$$typeof' in dbShard0 || !('$primary' in dbShard0) ? dbShard0 : dbShard0.$primary()
-    ) as typeof dbShard0;
+  const client = (
+    '$$typeof' in dbShard0 || !('$primary' in dbShard0) ? dbShard0 : dbShard0.$primary()
+  ) as typeof dbShard0;
 
-    const sub = await client.subscription.findUnique({
-      where: { teamId },
-      select: { status: true },
-    });
+  const sub = await client.subscription.findUnique({
+    where: { teamId },
+    select: { status: true },
+  });
 
-    if (sub) {
-      try {
-        await redis.set(cacheKey, sub.status, 'EX', 300);
-      } catch (err) {
-        void err;
-      }
-      if (sub.status === 'READ_ONLY') {
-        throw new AppError('TEAM_READ_ONLY', 403, 'Team is in read-only mode');
-      }
+  if (sub) {
+    try {
+      await redis.set(cacheKey, JSON.stringify({ shardIndex, status: sub.status }), 'EX', 300);
+    } catch (err) {
+      void err;
+    }
+    if (sub.status === 'READ_ONLY') {
+      throw new AppError('TEAM_READ_ONLY', 403, 'Team is in read-only mode');
     }
   }
 }

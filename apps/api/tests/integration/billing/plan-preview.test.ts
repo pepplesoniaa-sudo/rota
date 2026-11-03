@@ -378,13 +378,13 @@ describe('Phase 5: Plan Preview, Plan Changes, and Downgrades (FR-34, FR-36, FR-
 
     // Charge created
     expect(mockCharges).toHaveLength(1);
-    expect(mockCharges[0].kind).toBe('UPGRADE_PRORATION');
-    expect(mockCharges[0].amountCents).toBe(body.prorationCents);
+    expect(mockCharges[0]?.kind).toBe('UPGRADE_PRORATION');
+    expect(mockCharges[0]?.amountCents).toBe(body.prorationCents);
 
     // Ledger entry recorded
     expect(mockLedgerEntries).toHaveLength(1);
-    expect(mockLedgerEntries[0].type).toBe(LedgerEntryType.CHARGE_UPGRADE_PRORATION);
-    expect(mockLedgerEntries[0].amountCents).toBe(body.prorationCents);
-    expect(mockLedgerEntries[0].idempotencyKey).toBe(`charge:${mockCharges[0].id}`);
+    expect(mockLedgerEntries[0]?.type).toBe(LedgerEntryType.CHARGE_UPGRADE_PRORATION);
+    expect(mockLedgerEntries[0]?.amountCents).toBe(body.prorationCents);
+    expect(mockLedgerEntries[0]?.idempotencyKey).toBe(`charge:${mockCharges[0]?.id}`);
   });
 });

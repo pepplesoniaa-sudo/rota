@@ -327,19 +327,19 @@ describe('Phase 5: Grace Flow & Overdue Processing (Exit Criteria 4 & 5 / FR-39,
     expect(sweepResult.overdueCount).toBe(1);
 
     // 1. Charge marked FAILED
-    expect(mockCharges[0].status).toBe('FAILED');
-    expect(mockCharges[0].failureCode).toBe('OVERDUE');
+    expect(mockCharges[0]?.status).toBe('FAILED');
+    expect(mockCharges[0]?.failureCode).toBe('OVERDUE');
 
     // 2. PAYMENT_FAILED ledger entry with amount 0 (B-12, PRD 8.7)
     expect(mockLedgerEntries).toHaveLength(1);
-    expect(mockLedgerEntries[0].type).toBe(LedgerEntryType.PAYMENT_FAILED);
-    expect(mockLedgerEntries[0].amountCents).toBe(0);
-    expect(mockLedgerEntries[0].idempotencyKey).toBe(`payment-failed:overdue:${chargeId}`);
+    expect(mockLedgerEntries[0]?.type).toBe(LedgerEntryType.PAYMENT_FAILED);
+    expect(mockLedgerEntries[0]?.amountCents).toBe(0);
+    expect(mockLedgerEntries[0]?.idempotencyKey).toBe(`payment-failed:overdue:${chargeId}`);
 
     // 3. Subscription status transitions to PAST_DUE with graceEndsAt 7 days later (B-13)
-    expect(mockSubscriptions[0].status).toBe(SubscriptionStatus.PAST_DUE);
-    expect(mockSubscriptions[0].graceEndsAt).toBeInstanceOf(Date);
-    expect(mockSubscriptions[0].graceEndsAt?.getTime()).toBeGreaterThan(Date.now());
+    expect(mockSubscriptions[0]?.status).toBe(SubscriptionStatus.PAST_DUE);
+    expect(mockSubscriptions[0]?.graceEndsAt).toBeInstanceOf(Date);
+    expect(mockSubscriptions[0]?.graceEndsAt?.getTime()).toBeGreaterThan(Date.now());
 
     // 4. Grace-step jobs queued for days 1, 3, 5, 7
     const graceJobs = enqueuedJobs.filter((j) => j.name === 'billing.grace-step');
@@ -350,9 +350,12 @@ describe('Phase 5: Grace Flow & Overdue Processing (Exit Criteria 4 & 5 / FR-39,
 
   it('Exit Criteria 5 / FR-40 / B-11 / B-13: grace flow retries with declining card using new tx_ref, ending in READ_ONLY on day 7', async () => {
     // Put subscription into PAST_DUE
-    mockSubscriptions[0].status = SubscriptionStatus.PAST_DUE;
-    mockSubscriptions[0].failedAt = new Date();
-    mockSubscriptions[0].graceEndsAt = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    const sub0 = mockSubscriptions[0];
+    if (sub0) {
+      sub0.status = SubscriptionStatus.PAST_DUE;
+      sub0.failedAt = new Date();
+      sub0.graceEndsAt = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    }
 
     // Simulate Step 1 (Day 1 retry)
     const step1Result = await handleBillingGraceStep({
@@ -377,10 +380,10 @@ describe('Phase 5: Grace Flow & Overdue Processing (Exit Criteria 4 & 5 / FR-39,
 
     // New ChargeAttempt created with txRef = {chargeId}-2 (B-11)
     expect(mockChargeAttempts).toHaveLength(2);
-    expect(mockChargeAttempts[1].attemptNo).toBe(2);
-    expect(mockChargeAttempts[1].txRef).toBe(`${chargeId}-2`);
-    expect(mockChargeAttempts[1].status).toBe('FAILED');
-    expect(mockCharges[0].status).toBe('FAILED');
+    expect(mockChargeAttempts[1]?.attemptNo).toBe(2);
+    expect(mockChargeAttempts[1]?.txRef).toBe(`${chargeId}-2`);
+    expect(mockChargeAttempts[1]?.status).toBe('FAILED');
+    expect(mockCharges[0]?.status).toBe('FAILED');
 
     // Simulate Step 3 (Day 3 retry)
     const step3Result = await handleBillingGraceStep({
@@ -407,8 +410,8 @@ describe('Phase 5: Grace Flow & Overdue Processing (Exit Criteria 4 & 5 / FR-39,
     expect(step7Result.action).toBe('read_only');
 
     // Subscription transitioned to READ_ONLY (B-13, FR-40)
-    expect(mockSubscriptions[0].status).toBe(SubscriptionStatus.READ_ONLY);
-    expect(mockSubscriptions[0].readOnlySince).toBeDefined();
+    expect(mockSubscriptions[0]?.status).toBe(SubscriptionStatus.READ_ONLY);
+    expect(mockSubscriptions[0]?.readOnlySince).toBeDefined();
 
     // Verify team writes are blocked with 403 TEAM_READ_ONLY (B-14)
     await expect(checkTeamNotReadOnly(teamId)).rejects.toThrowError(
