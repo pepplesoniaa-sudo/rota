@@ -74,6 +74,7 @@ export async function dispatchOutboxEntry(entry: OutboxEntry): Promise<void> {
   const retryPolicy = JOB_RETRY_POLICIES[entry.kind as keyof typeof JOB_RETRY_POLICIES];
 
   let jobId: string;
+  let delay: number | undefined;
   if (entry.kind === 'notify.fanout') {
     jobId = JobId.notifyFanout(entry.sourceKey);
   } else if (entry.kind === 'feed.append') {
@@ -82,6 +83,10 @@ export async function dispatchOutboxEntry(entry: OutboxEntry): Promise<void> {
   } else if (entry.kind === 'email.send') {
     const p = entry.payload as { emailMessageId: string };
     jobId = JobId.emailSend(p.emailMessageId);
+  } else if (entry.kind === 'maintenance.purge-team') {
+    const p = entry.payload as { teamId: string };
+    jobId = JobId.maintenancePurgeTeam(p.teamId);
+    delay = 30 * 24 * 3600 * 1000; // 30 days
   } else {
     jobId = entry.sourceKey;
   }
@@ -89,6 +94,7 @@ export async function dispatchOutboxEntry(entry: OutboxEntry): Promise<void> {
   try {
     await queue.add(entry.kind, entry.payload, {
       jobId,
+      ...(delay ? { delay } : {}),
       ...retryPolicy,
     });
     logger.debug({ jobId, queueName, kind: entry.kind }, 'Dispatched outbox job');

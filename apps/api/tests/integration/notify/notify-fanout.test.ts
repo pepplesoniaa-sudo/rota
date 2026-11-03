@@ -112,14 +112,20 @@ vi.mock('../../../lib/db', () => ({
         async ({
           where,
         }: {
-          where: { teamId: string; status: string; role?: { in: string[] } };
+          where: { teamId?: string; userId?: string; status?: string; role?: { in: string[] } };
         }) => {
-          return mockMemberships.filter((m) => {
-            if (m.teamId !== where.teamId) return false;
-            if (m.status !== where.status) return false;
-            if (where.role?.in && !where.role.in.includes(m.role)) return false;
-            return true;
-          });
+          return mockMemberships
+            .filter((m) => {
+              if (where.teamId && m.teamId !== where.teamId) return false;
+              if (where.userId && m.userId !== where.userId) return false;
+              if (where.status && m.status !== where.status) return false;
+              if (where.role?.in && !where.role.in.includes(m.role)) return false;
+              return true;
+            })
+            .map((m) => ({
+              ...m,
+              team: mockTeams.find((t) => t.id === m.teamId) ?? { id: m.teamId, shardIndex: 0 },
+            }));
         },
       ),
     },
@@ -157,6 +163,11 @@ vi.mock('../../../lib/db', () => ({
       }),
     },
   },
+  getShardClient: vi.fn(() => ({
+    shift: {
+      findMany: vi.fn(async () => []),
+    },
+  })),
 }));
 
 vi.mock('../../../lib/data/router', () => ({
@@ -431,5 +442,99 @@ describe('PRD 6.2 & FR-27 / FR-28 / FR-30 / B-41 / B-42: Notification Fanout', (
     );
     expect(userNotifs).toHaveLength(1);
     expect(mockOutboxProcessedKeys).toContain(`event:${eventId}`);
+  });
+
+  it('FR-28a: respects 8 hours quiet post-night shift when quietAfterNightShift is enabled', async () => {
+    // In UTC, two hours ago: choose a timezone where twoHoursAgo was 06:00 AM
+    // For any current UTC hour, find an offset so that hour = 6
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+    const utcHour = twoHoursAgo.getUTCHours();
+    const neededOffset = (6 - utcHour + 24) % 24;
+    // Map offset to valid IANA timezone
+    const offsetMap: Record<number, string> = {
+      0: 'UTC',
+      1: 'Europe/Paris',
+      2: 'Europe/Athens',
+      3: 'Asia/Riyadh',
+      4: 'Asia/Dubai',
+      5: 'Asia/Karachi',
+      6: 'Asia/Dhaka',
+      7: 'Asia/Bangkok',
+      8: 'Asia/Singapore',
+      9: 'Asia/Tokyo',
+      10: 'Australia/Sydney',
+      11: 'Pacific/Guadalcanal',
+      12: 'Pacific/Auckland',
+      13: 'Pacific/Tongatapu',
+      14: 'Pacific/Kiritimati',
+      15: 'America/Honolulu', // UTC-10
+      16: 'America/Anchorage', // UTC-9
+      17: 'America/Los_Angeles', // UTC-8
+      18: 'America/Denver', // UTC-7
+      19: 'America/Chicago', // UTC-6
+      20: 'America/New_York', // UTC-5
+      21: 'America/Halifax', // UTC-4
+      22: 'America/Sao_Paulo', // UTC-3
+      23: 'Atlantic/Cape_Verde', // UTC-1
+    };
+    const targetZone = offsetMap[neededOffset] ?? 'UTC';
+
+    const s1 = mockUserSettings.find((s) => s.userId === staff1Id);
+    if (s1) {
+      s1.quietHoursEnabled = true;
+      s1.quietAfterNightShift = true;
+      s1.timezone = targetZone;
+      // Ensure standard quiet hours are not covering the current minute
+      s1.quietStartMinute = 1320; // 22:00
+      s1.quietEndMinute = 420; // 07:00
+    }
+
+    // Mock getShardClient to return a night shift ending two hours ago
+    const { getShardClient } = await import('../../../lib/db');
+    vi.mocked(getShardClient).mockReturnValue({
+      shift: {
+        findMany: vi.fn(async () => [{ endsAt: twoHoursAgo }]),
+      },
+    } as unknown as ReturnType<typeof getShardClient>);
+
+    const shiftId = '018f6e80-7711-7000-8000-000000000050';
+    mockShifts.push({
+      id: shiftId,
+      teamId,
+      assigneeUserId: staff1Id,
+      startAt: new Date(Date.now() + 24 * 3600 * 1000),
+      endAt: new Date(Date.now() + 32 * 3600 * 1000),
+      status: 'PUBLISHED',
+    });
+
+    const eventId = '018f6e80-7711-7000-8000-000000000051';
+    mockActivityEvents.push({
+      id: eventId,
+      teamId,
+      type: 'SHIFT_CHANGED',
+      actorUserId: ownerId,
+      subjectShiftId: shiftId,
+      payload: {},
+    });
+
+    await processNotificationFanout({
+      sourceKey: `event:${eventId}`,
+      teamId,
+      type: 'SHIFT_CHANGED',
+      actorUserId: ownerId,
+    });
+
+    const notif = mockNotifications.find((n) => n.userId === staff1Id);
+    expect(notif).toBeDefined();
+    // In quiet hours due to FR-28a night shift: scheduled for 8 hours after twoHoursAgo
+    const expectedRelease = new Date(twoHoursAgo.getTime() + 8 * 3600 * 1000);
+    expect(notif?.scheduledFor.toISOString()).toBe(expectedRelease.toISOString());
+
+    // Enqueued notify.release job
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      'notify.release',
+      expect.objectContaining({ userId: staff1Id, releaseAt: expectedRelease.toISOString() }),
+      expect.anything(),
+    );
   });
 });

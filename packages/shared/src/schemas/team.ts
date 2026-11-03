@@ -236,6 +236,27 @@ export const UpdateTeamBody = z
 export type UpdateTeamBody = z.infer<typeof UpdateTeamBody>;
 
 /**
+ * Team deletion request body (FR-14, PRD 7.2).
+ * Owner must confirm by typing the exact team name.
+ */
+export const DeleteTeamBody = z
+  .object({
+    teamName: z.string().trim().min(1, 'Team name confirmation is required'),
+  })
+  .strict();
+
+export type DeleteTeamBody = z.infer<typeof DeleteTeamBody>;
+
+export const DeleteTeamResponse = z
+  .object({
+    ok: z.literal(true),
+    teamId: z.string().uuid(),
+  })
+  .strict();
+
+export type DeleteTeamResponse = z.infer<typeof DeleteTeamResponse>;
+
+/**
  * Full team details response (PRD 7.2).
  */
 export const TeamDetailsResponse = z

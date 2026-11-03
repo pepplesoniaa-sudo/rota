@@ -1,5 +1,7 @@
 import {
   AppError,
+  DeleteTeamBody,
+  DeleteTeamResponse,
   TeamDetailsResponse,
   TransferOwnershipBody,
   TransferOwnershipResponse,
@@ -9,6 +11,7 @@ import { verifyPassword } from '../../auth/password';
 import { invalidatePermissionCache, invalidateTeamCache } from '../../auth/permissions';
 import { dbShard0 } from '../../db';
 import { dispatchOutboxEntry, writeOutbox } from '../../outbox/writer';
+import { JobId } from '../../../worker/queues';
 
 /**
  * Retrieves full details of a team (PRD 7.2).
@@ -215,4 +218,94 @@ export async function transferOwnership(
     teamId,
     newOwnerUserId: body.targetUserId,
   };
+}
+
+/**
+ * Deletes a team (FR-14, PRD 7.2).
+ * Owner only. Must confirm by typing the exact team name.
+ * - Team is marked deleted (deletedAt set).
+ * - All members lose access immediately (memberships set to INACTIVE).
+ * - Subscription is canceled with no refund (FR-14, PRD 1835).
+ * - Pending invites are revoked.
+ * - Outbox entry and delayed maintenance.purge-team job created for 30 days later.
+ * - Works while the team is read-only (B-14 exception, L55).
+ */
+export async function deleteTeam(
+  teamId: string,
+  actorUserId: string,
+  body: DeleteTeamBody,
+): Promise<DeleteTeamResponse> {
+  const client = (
+    '$$typeof' in dbShard0 || !('$primary' in dbShard0) ? dbShard0 : dbShard0.$primary()
+  ) as typeof dbShard0;
+
+  const team = await client.team.findUnique({
+    where: { id: teamId },
+    select: { id: true, name: true, ownerUserId: true, deletedAt: true },
+  });
+
+  if (!team || team.deletedAt) {
+    throw new AppError('NOT_FOUND', 404, 'Team not found');
+  }
+
+  if (team.ownerUserId !== actorUserId) {
+    throw new AppError('FORBIDDEN', 403, 'Only the team owner can delete the team');
+  }
+
+  if (body.teamName !== team.name) {
+    throw new AppError('VALIDATION_FAILED', 400, 'Team name does not match');
+  }
+
+  // Load active members for permission cache invalidation
+  const activeMembers = await client.membership.findMany({
+    where: { teamId, status: 'ACTIVE' },
+    select: { userId: true },
+  });
+
+  const now = new Date();
+
+  const outboxEntry = await client.$transaction(async (tx) => {
+    // 1. Mark team deleted
+    await tx.team.update({
+      where: { id: teamId },
+      data: { deletedAt: now },
+    });
+
+    // 2. Cancel subscription with no refund (FR-14, PRD 1835)
+    await tx.subscription.updateMany({
+      where: { teamId },
+      data: { status: 'CANCELED' },
+    });
+
+    // 3. Mark all active memberships REMOVED so access is lost immediately (FR-14)
+    await tx.membership.updateMany({
+      where: { teamId, status: 'ACTIVE' },
+      data: { status: 'REMOVED' },
+    });
+
+    // 4. Revoke any pending invites
+    await tx.invite.updateMany({
+      where: { teamId, revokedAt: null, acceptedAt: null },
+      data: { revokedAt: now },
+    });
+
+    // 5. Write Outbox entry for maintenance.purge-team
+    const outbox = await writeOutbox(tx, {
+      kind: 'maintenance.purge-team',
+      sourceKey: JobId.maintenancePurgeTeam(teamId),
+      payload: { teamId },
+      teamId,
+    });
+
+    return outbox;
+  });
+
+  // Post-commit: dispatch outbox and invalidate caches
+  await dispatchOutboxEntry(outboxEntry);
+  await invalidateTeamCache(teamId);
+  for (const m of activeMembers) {
+    await invalidatePermissionCache(m.userId, teamId);
+  }
+
+  return { ok: true, teamId };
 }

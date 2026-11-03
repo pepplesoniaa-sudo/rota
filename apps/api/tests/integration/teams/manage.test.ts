@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import {
   GET as getTeamRoute,
   PATCH as updateTeamRoute,
+  DELETE as deleteTeamRoute,
 } from '../../../app/v1/teams/[teamId]/route';
 import { POST as transferOwnershipRoute } from '../../../app/v1/teams/[teamId]/ownership-transfer/route';
 import { createAccessToken } from '../../../lib/auth/jwt';
@@ -105,12 +106,41 @@ vi.mock('../../../lib/db', () => {
         ).length;
       },
     ),
+    findMany: vi.fn(
+      async ({
+        where,
+      }: {
+        where: { teamId: string; status?: 'ACTIVE' | 'REMOVED' | 'LEFT' | 'INACTIVE' };
+      }) => {
+        return mockMemberships.filter(
+          (m) => m.teamId === where.teamId && (!where.status || m.status === where.status),
+        );
+      },
+    ),
     update: vi.fn(
       async ({ where, data }: { where: { id: string }; data: Partial<MockMembership> }) => {
         const found = mockMemberships.find((m) => m.id === where.id);
         if (!found) throw new Error('Membership not found');
         Object.assign(found, data);
         return { ...found };
+      },
+    ),
+    updateMany: vi.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { teamId: string; status?: string };
+        data: Partial<MockMembership>;
+      }) => {
+        let count = 0;
+        for (const m of mockMemberships) {
+          if (m.teamId === where.teamId && (!where.status || m.status === where.status)) {
+            Object.assign(m, data);
+            count++;
+          }
+        }
+        return { count };
       },
     ),
   };
@@ -120,6 +150,22 @@ vi.mock('../../../lib/db', () => {
       const found = mockSubscriptions.find((s) => s.teamId === where.teamId);
       return found ? { ...found } : null;
     }),
+    updateMany: vi.fn(
+      async ({ where, data }: { where: { teamId: string }; data: Partial<MockSubscription> }) => {
+        let count = 0;
+        for (const s of mockSubscriptions) {
+          if (s.teamId === where.teamId) {
+            Object.assign(s, data);
+            count++;
+          }
+        }
+        return { count };
+      },
+    ),
+  };
+
+  const inviteDelegate = {
+    updateMany: vi.fn(async () => ({ count: 0 })),
   };
 
   const outboxDelegate = {
@@ -141,6 +187,7 @@ vi.mock('../../../lib/db', () => {
     user: userDelegate,
     membership: membershipDelegate,
     subscription: subscriptionDelegate,
+    invite: inviteDelegate,
     outbox: outboxDelegate,
     $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
       cb({
@@ -148,6 +195,7 @@ vi.mock('../../../lib/db', () => {
         user: userDelegate,
         membership: membershipDelegate,
         subscription: subscriptionDelegate,
+        invite: inviteDelegate,
         outbox: outboxDelegate,
       }),
     ),
@@ -156,6 +204,7 @@ vi.mock('../../../lib/db', () => {
       user: userDelegate,
       membership: membershipDelegate,
       subscription: subscriptionDelegate,
+      invite: inviteDelegate,
       outbox: outboxDelegate,
       $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
         cb({
@@ -163,6 +212,7 @@ vi.mock('../../../lib/db', () => {
           user: userDelegate,
           membership: membershipDelegate,
           subscription: subscriptionDelegate,
+          invite: inviteDelegate,
           outbox: outboxDelegate,
         }),
       ),
@@ -201,15 +251,23 @@ vi.mock('../../../lib/redis', () => ({
   },
 }));
 
+export const enqueuedJobs: Array<{ queue: string; name: string; data: unknown; opts?: unknown }> =
+  [];
+
 vi.mock('../../../worker/queues', () => ({
-  getQueue: vi.fn(() => ({
-    add: vi.fn(async () => ({ id: 'mock-job-id' })),
+  getQueue: vi.fn((queueName: string) => ({
+    add: vi.fn(async (name: string, data: unknown, opts?: unknown) => {
+      enqueuedJobs.push({ queue: queueName, name, data, opts });
+      return { id: 'mock-job-id' };
+    }),
   })),
   JOB_RETRY_POLICIES: {
     'notify.fanout': { attempts: 5, backoff: { type: 'exponential', delay: 5000 } },
+    'maintenance.purge-team': { attempts: 5, backoff: { type: 'fixed', delay: 60000 } },
   },
   JobId: {
     notifyFanout: (sourceKey: string) => `fanout:${sourceKey}`,
+    maintenancePurgeTeam: (teamId: string) => `purge:${teamId}`,
   },
 }));
 
@@ -319,6 +377,7 @@ describe('Team Details and Ownership Transfer (FR-13, PRD 7.2)', () => {
     ];
 
     mockOutboxEntries = [];
+    enqueuedJobs.length = 0;
     mockRedisStore.clear();
     vi.clearAllMocks();
 
@@ -562,6 +621,113 @@ describe('Team Details and Ownership Transfer (FR-13, PRD 7.2)', () => {
 
       const team = mockTeams.find((t) => t.id === teamId);
       expect(team?.ownerUserId).toBe(staffUserId);
+    });
+  });
+
+  describe('DELETE /v1/teams/:teamId (FR-14, PRD 7.2)', () => {
+    it('allows owner to delete team with matching teamName confirmation', async () => {
+      // Pre-warm caches
+      mockRedisStore.set(`team:${teamId}`, { value: 'ACTIVE', expireAt: Date.now() + 300000 });
+      mockRedisStore.set(`perm:${ownerUserId}:${teamId}`, {
+        value: 'OWNER',
+        expireAt: Date.now() + 60000,
+      });
+
+      const req = makeRequest(
+        `http://localhost:3000/v1/teams/${teamId}`,
+        'DELETE',
+        { teamName: 'Apex Medical Center' },
+        ownerToken,
+      );
+
+      const res = await deleteTeamRoute(req, {
+        params: Promise.resolve({ teamId }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; teamId: string };
+      expect(body.ok).toBe(true);
+      expect(body.teamId).toBe(teamId);
+
+      // Verify team marked deleted (deletedAt set)
+      const team = mockTeams.find((t) => t.id === teamId);
+      expect(team?.deletedAt).toBeInstanceOf(Date);
+
+      // Verify subscription canceled with no refund (FR-14)
+      const sub = mockSubscriptions.find((s) => s.teamId === teamId);
+      expect(sub?.status).toBe('CANCELED');
+
+      // Verify all memberships marked INACTIVE
+      const activeMemberships = mockMemberships.filter(
+        (m) => m.teamId === teamId && m.status === 'ACTIVE',
+      );
+      expect(activeMemberships).toHaveLength(0);
+
+      // Verify outbox entry for maintenance.purge-team
+      const purgeOutbox = mockOutboxEntries.find((o) => o.kind === 'maintenance.purge-team');
+      expect(purgeOutbox).toBeDefined();
+      expect(purgeOutbox?.sourceKey).toBe(`purge:${teamId}`);
+
+      // Verify delayed BullMQ job enqueued for 30 days
+      const purgeJob = enqueuedJobs.find((j) => j.name === 'maintenance.purge-team');
+      expect(purgeJob).toBeDefined();
+      expect(purgeJob?.queue).toBe('maintenance');
+      expect((purgeJob?.opts as { delay?: number })?.delay).toBe(30 * 24 * 3600 * 1000);
+
+      // Verify team cache and permission cache invalidated
+      expect(mockRedisStore.has(`team:${teamId}`)).toBe(false);
+      expect(mockRedisStore.has(`perm:${ownerUserId}:${teamId}`)).toBe(false);
+    });
+
+    it('rejects deletion when teamName confirmation does not match with 400 VALIDATION_FAILED', async () => {
+      const req = makeRequest(
+        `http://localhost:3000/v1/teams/${teamId}`,
+        'DELETE',
+        { teamName: 'Wrong Name' },
+        ownerToken,
+      );
+
+      const res = await deleteTeamRoute(req, {
+        params: Promise.resolve({ teamId }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('rejects manager or staff attempting to delete team with 403 FORBIDDEN', async () => {
+      const req = makeRequest(
+        `http://localhost:3000/v1/teams/${teamId}`,
+        'DELETE',
+        { teamName: 'Apex Medical Center' },
+        managerToken,
+      );
+
+      const res = await deleteTeamRoute(req, {
+        params: Promise.resolve({ teamId }),
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('allows team deletion even when the team is in READ_ONLY status (FR-14, B-14, L55)', async () => {
+      const sub = mockSubscriptions[0];
+      if (sub) sub.status = 'READ_ONLY';
+
+      const req = makeRequest(
+        `http://localhost:3000/v1/teams/${teamId}`,
+        'DELETE',
+        { teamName: 'Apex Medical Center' },
+        ownerToken,
+      );
+
+      const res = await deleteTeamRoute(req, {
+        params: Promise.resolve({ teamId }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean };
+      expect(body.ok).toBe(true);
+
+      const team = mockTeams.find((t) => t.id === teamId);
+      expect(team?.deletedAt).toBeInstanceOf(Date);
     });
   });
 });

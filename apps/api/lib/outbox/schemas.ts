@@ -37,10 +37,19 @@ export const emailSendPayloadSchema = z
 
 export type EmailSendPayload = z.infer<typeof emailSendPayloadSchema>;
 
+export const maintenancePurgeTeamPayloadSchema = z
+  .object({
+    teamId: z.string().uuid(),
+  })
+  .strict();
+
+export type MaintenancePurgeTeamPayload = z.infer<typeof maintenancePurgeTeamPayloadSchema>;
+
 export const outboxPayloadSchema = z.union([
   feedAppendPayloadSchema,
   notifyFanoutPayloadSchema,
   emailSendPayloadSchema,
+  maintenancePurgeTeamPayloadSchema,
 ]);
 
 export type OutboxPayload = z.infer<typeof outboxPayloadSchema>;
@@ -56,6 +65,8 @@ export function validateOutboxPayload(kind: string, payload: unknown) {
       return notifyFanoutPayloadSchema.parse(payload);
     case 'email.send':
       return emailSendPayloadSchema.parse(payload);
+    case 'maintenance.purge-team':
+      return maintenancePurgeTeamPayloadSchema.parse(payload);
     default:
       return outboxPayloadSchema.parse(payload);
   }

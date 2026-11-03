@@ -1,6 +1,6 @@
-import { AppError, UpdateTeamBody } from '@rota/shared';
+import { AppError, DeleteTeamBody, UpdateTeamBody } from '@rota/shared';
 import { withApi } from '../../../../lib/api/with-api';
-import { getTeam, updateTeam } from '../../../../lib/domain/teams/manage';
+import { deleteTeam, getTeam, updateTeam } from '../../../../lib/domain/teams/manage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,5 +29,19 @@ export const PATCH = withApi(
       throw new AppError('AUTH_TOKEN_EXPIRED', 401, 'Unauthorized');
     }
     return updateTeam(teamId, userId, body);
+  },
+);
+
+export const DELETE = withApi(
+  {
+    auth: 'access',
+    roles: ['OWNER'],
+    body: DeleteTeamBody,
+  },
+  async ({ teamId, userId, body }) => {
+    if (!teamId || !userId) {
+      throw new AppError('AUTH_TOKEN_EXPIRED', 401, 'Unauthorized');
+    }
+    return deleteTeam(teamId, userId, body);
   },
 );

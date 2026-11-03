@@ -1,5 +1,6 @@
+import { DateTime } from 'luxon';
 import { NotificationType, Prisma } from '@prisma/client';
-import { dbShard0 } from '../../db';
+import { dbShard0, getShardClient } from '../../db';
 import { getShardDbForTeam } from '../../data/router';
 import { logger } from '../../log';
 import { calculateQuietHours } from '../../time/quiet-hours';
@@ -20,6 +21,73 @@ interface RecipientItem {
   title: string;
   body: string;
   data?: Record<string, unknown>;
+}
+
+/**
+ * Resolves the end instant of the latest night shift for a user (FR-28a).
+ * A night shift ends between 04:00 and 10:00 in the user's timezone.
+ * Returns the end instant if it occurred within the past 8 hours, or null.
+ */
+export async function resolveLastNightShiftEndUtc(
+  userId: string,
+  userTimezone: string,
+  nowUtc: Date = new Date(),
+): Promise<Date | null> {
+  try {
+    const eightHoursAgo = new Date(nowUtc.getTime() - 8 * 3600 * 1000);
+
+    const memberships = await dbShard0.membership.findMany({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        team: { deletedAt: null },
+      },
+      select: {
+        team: {
+          select: {
+            id: true,
+            shardIndex: true,
+          },
+        },
+      },
+    });
+
+    if (memberships.length === 0) return null;
+
+    const shardIndexes = Array.from(new Set(memberships.map((m) => m.team.shardIndex)));
+    let latestNightShiftEnd: Date | null = null;
+
+    for (const shardIdx of shardIndexes) {
+      const shardClient = getShardClient(shardIdx);
+      const shifts = await shardClient.shift.findMany({
+        where: {
+          assigneeUserId: userId,
+          status: 'PUBLISHED',
+          deletedAt: null,
+          endsAt: {
+            gte: eightHoursAgo,
+            lte: nowUtc,
+          },
+        },
+        select: { endsAt: true },
+      });
+
+      for (const shift of shifts) {
+        const dt = DateTime.fromJSDate(shift.endsAt, { zone: 'utc' }).setZone(userTimezone);
+        const endMinute = dt.hour * 60 + dt.minute;
+        if (endMinute >= 240 && endMinute <= 600) {
+          if (!latestNightShiftEnd || shift.endsAt.getTime() > latestNightShiftEnd.getTime()) {
+            latestNightShiftEnd = shift.endsAt;
+          }
+        }
+      }
+    }
+
+    return latestNightShiftEnd;
+  } catch (err) {
+    logger.debug({ err, userId }, 'Error resolving night shift end for quiet hours');
+    return null;
+  }
 }
 
 /**
@@ -317,12 +385,18 @@ export async function processNotificationFanout(params: FanoutParams): Promise<n
     }
 
     // Calculate quiet hours
+    let lastNightShiftEndUtc: Date | null = null;
+    if (settings.quietAfterNightShift) {
+      lastNightShiftEndUtc = await resolveLastNightShiftEndUtc(recipient.userId, settings.timezone);
+    }
+
     const quietResult = calculateQuietHours({
       timezone: settings.timezone,
       quietHoursEnabled: settings.quietHoursEnabled,
       quietStartMinute: settings.quietStartMinute,
       quietEndMinute: settings.quietEndMinute,
       quietAfterNightShift: settings.quietAfterNightShift,
+      lastNightShiftEndUtc,
     });
 
     const dedupeKey = `${sourceKey}:${recipient.userId}`;

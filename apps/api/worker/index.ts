@@ -6,6 +6,7 @@ import { handleNotifyFanout } from './jobs/notify/fanout';
 import { handleNotifyDeliver } from './jobs/notify/deliver';
 import { handleNotifyRelease } from './jobs/notify/release';
 import { handleNotifyReschedule } from './jobs/notify/reschedule';
+import { handleNotifyShiftReminder } from './jobs/notify/shift-reminder';
 import { handleSwapsExpire } from './jobs/swaps/expire';
 import { handleBillingWebhook } from './jobs/billing/webhook';
 import { handleBillingCharge } from './jobs/billing/charge';
@@ -14,6 +15,8 @@ import { handleBillingGraceStep } from './jobs/billing/grace-step';
 import { handleBillingRenewalScan } from './jobs/billing/renewal-scan';
 import { handleBillingRenew } from './jobs/billing/renew';
 import { handleBillingReconcile } from './jobs/billing/reconcile';
+import { handleMaintenancePurgeTeam } from './jobs/maintenance/purge-team';
+import { handlePipelineTeamDailyStats } from './jobs/pipeline/team-daily-stats';
 import { startReplicaLagProbe } from '../lib/data/router';
 import { getQueue } from './queues';
 
@@ -51,6 +54,8 @@ export async function startWorker() {
           return handleNotifyRelease(job.data);
         case 'notify.reschedule':
           return handleNotifyReschedule(job.data);
+        case 'notify.shift-reminder':
+          return handleNotifyShiftReminder(job.data);
         default:
           logger.warn({ jobName: job.name }, 'Unknown job in notify queue');
       }
@@ -114,7 +119,47 @@ export async function startWorker() {
     logger.error({ jobId: job?.id, err }, 'Job in billing queue failed');
   });
 
-  // 5. Register repeatable outbox.sweep jobs for s0 and s1 every 60s (PRD 6.2)
+  // 5. Register maintenance queue worker
+  const maintenanceWorker = new Worker(
+    'maintenance',
+    async (job) => {
+      switch (job.name) {
+        case 'maintenance.purge-team':
+          return handleMaintenancePurgeTeam(job.data);
+        default:
+          logger.warn({ jobName: job.name }, 'Unknown job in maintenance queue');
+      }
+    },
+    {
+      connection: { url: env.REDIS_URL },
+    },
+  );
+
+  maintenanceWorker.on('failed', (job, err) => {
+    logger.error({ jobId: job?.id, err }, 'Job in maintenance queue failed');
+  });
+
+  // 6. Register pipeline queue worker
+  const pipelineWorker = new Worker(
+    'pipeline',
+    async (job) => {
+      switch (job.name) {
+        case 'pipeline.team-daily-stats':
+          return handlePipelineTeamDailyStats(job.data);
+        default:
+          logger.warn({ jobName: job.name }, 'Unknown job in pipeline queue');
+      }
+    },
+    {
+      connection: { url: env.REDIS_URL },
+    },
+  );
+
+  pipelineWorker.on('failed', (job, err) => {
+    logger.error({ jobId: job?.id, err }, 'Job in pipeline queue failed');
+  });
+
+  // 7. Register repeatable outbox.sweep jobs for s0 and s1 every 60s (PRD 6.2)
   try {
     const outboxQueue = getQueue('outbox');
     await outboxQueue.add(
@@ -154,7 +199,26 @@ export async function startWorker() {
     logger.warn({ err }, 'Could not register repeatable swaps.expire job in Redis at boot');
   }
 
-  // 7. Register repeatable billing jobs (PRD 6.2)
+  // 7. Register repeatable notify.shift-reminder job every 5 minutes (PRD 6.2, FR-45)
+  try {
+    const notifyQueue = getQueue('notify');
+    await notifyQueue.add(
+      'notify.shift-reminder',
+      {},
+      {
+        repeat: { every: 300_000 },
+        jobId: 'repeatable-notify-shift-reminder',
+      },
+    );
+    logger.info('Registered repeatable notify.shift-reminder job (every 5 min)');
+  } catch (err) {
+    logger.warn(
+      { err },
+      'Could not register repeatable notify.shift-reminder job in Redis at boot',
+    );
+  }
+
+  // 8. Register repeatable billing jobs (PRD 6.2)
   try {
     const billingQueue = getQueue('billing');
     // billing.renewal-scan: every 15 min
@@ -189,7 +253,26 @@ export async function startWorker() {
     logger.warn({ err }, 'Could not register repeatable billing jobs in Redis at boot');
   }
 
-  // 8. Start replica lag probe timer (PRD 6.1, line 529)
+  // 9. Register repeatable pipeline daily stats job at 04:00 UTC (PRD 6.2, FR-46)
+  try {
+    const pipelineQueue = getQueue('pipeline');
+    await pipelineQueue.add(
+      'pipeline.team-daily-stats',
+      {},
+      {
+        repeat: { pattern: '0 4 * * *' },
+        jobId: 'repeatable-pipeline-daily-stats',
+      },
+    );
+    logger.info('Registered repeatable pipeline.team-daily-stats job (daily 04:00 UTC)');
+  } catch (err) {
+    logger.warn(
+      { err },
+      'Could not register repeatable pipeline.team-daily-stats job in Redis at boot',
+    );
+  }
+
+  // 10. Start replica lag probe timer (PRD 6.1, line 529)
   const stopLagProbe = startReplicaLagProbe(5000);
 
   const shutdown = async () => {
@@ -200,13 +283,23 @@ export async function startWorker() {
       notifyWorker.close(),
       swapsWorker.close(),
       billingWorker.close(),
+      maintenanceWorker.close(),
+      pipelineWorker.close(),
     ]);
   };
 
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGINT', () => void shutdown());
 
-  return { outboxWorker, notifyWorker, swapsWorker, billingWorker, shutdown };
+  return {
+    outboxWorker,
+    notifyWorker,
+    swapsWorker,
+    billingWorker,
+    maintenanceWorker,
+    pipelineWorker,
+    shutdown,
+  };
 }
 
 // Auto-run if executed directly via tsx worker/index.ts
