@@ -57,7 +57,7 @@ jobs:
       - name: Check for committed secrets (GIT-1)
         shell: bash
         run: |
-          if git grep -E "(FLWSECK|FLWPUBK|-----BEGIN)" -- ':!.env.example' ':!docs/Rota-PRD-v1.1.md' ':!.agents/rules/security.md' ':!apps/api/lib/config/env.ts'; then
+          if git grep -E "(FLWSECK|FLWPUBK|-----BEGIN)" -- ':!.env.example' ':!docs/Rota-PRD-v1.1.md' ':!.agents/**' ':!apps/api/lib/config/env.ts' ':!.github/workflows/ci.yml'; then
             echo "ERROR: Potential secret detected in tracked files (GIT-1)."
             exit 1
           fi

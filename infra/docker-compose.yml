@@ -37,8 +37,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=placeholder-jwt-secret-at-least-32-characters-long
       - CARD_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-      - FLW_SECRET_KEY=FLWSECK_TEST-placeholder
-      - FLW_PUBLIC_KEY=FLWPUBK_TEST-placeholder
+      - FLW_SECRET_KEY=${FLW_SECRET_KEY}
+      - FLW_PUBLIC_KEY=${FLW_PUBLIC_KEY}
       - FLW_SECRET_HASH=placeholder-webhook-hash
     depends_on:
       - pgbouncer
@@ -68,8 +68,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=placeholder-jwt-secret-at-least-32-characters-long
       - CARD_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-      - FLW_SECRET_KEY=FLWSECK_TEST-placeholder
-      - FLW_PUBLIC_KEY=FLWPUBK_TEST-placeholder
+      - FLW_SECRET_KEY=${FLW_SECRET_KEY}
+      - FLW_PUBLIC_KEY=${FLW_PUBLIC_KEY}
       - FLW_SECRET_HASH=placeholder-webhook-hash
     depends_on:
       - pgbouncer
