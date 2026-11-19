@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "pnpm --filter api run dev",
+    "dev:api": "pnpm --filter api run dev",
+    "dev:worker": "pnpm --filter api run worker",
+    "dev:mobile": "pnpm --filter mobile run dev",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "pnpm -r --parallel run typecheck",
