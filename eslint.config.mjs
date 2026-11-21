@@ -119,4 +119,18 @@ export default tseslint.config(
       },
     },
   },
+  // Mobile bundler configuration
+  {
+    files: ['apps/mobile/metro.config.js'],
+    languageOptions: {
+      globals: {
+        module: 'readonly',
+        require: 'readonly',
+        __dirname: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 );
