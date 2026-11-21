@@ -18,4 +18,3 @@ export const GET = withApi(
     return getTeamStats(teamId, query);
   },
 );
-

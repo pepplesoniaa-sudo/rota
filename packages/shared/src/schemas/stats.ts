@@ -43,4 +43,3 @@ export const StatsResponse = z
   .strict();
 
 export type StatsResponse = z.infer<typeof StatsResponse>;
-

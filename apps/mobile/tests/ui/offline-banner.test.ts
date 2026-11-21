@@ -24,7 +24,8 @@ describe('FR-32 OfflineBanner State & Text Rules', () => {
 
   it('returns "Offline. Last updated {time}." when offline with recent sync under 14 days (FR-32)', () => {
     useAppStore.getState().setOnline(false);
-    const syncDate = new Date('2026-11-02T14:30:00Z');
+    // Recent sync 1 hour ago (< 14 days)
+    const syncDate = new Date(Date.now() - 60 * 60 * 1000);
     useAppStore.getState().setLastSynced(syncDate);
 
     const bannerText = useAppStore.getState().getOfflineBannerText();
