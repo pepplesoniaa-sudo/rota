@@ -121,7 +121,7 @@ export default tseslint.config(
   },
   // Mobile bundler configuration
   {
-    files: ['apps/mobile/metro.config.js'],
+    files: ['apps/mobile/metro.config.js', '**/*react-native.config.js'],
     languageOptions: {
       globals: {
         module: 'readonly',

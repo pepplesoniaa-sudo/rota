@@ -33,9 +33,7 @@ export default (): ExpoConfig => ({
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/v1',
     eas: {
-      projectId:
-        process.env.EXPO_PUBLIC_PROJECT_ID ??
-        'c902db9e-8f9d-4f89-8257-bf903270dc6b',
+      projectId: process.env.EXPO_PUBLIC_PROJECT_ID ?? 'c902db9e-8f9d-4f89-8257-bf903270dc6b',
     },
   },
 });
