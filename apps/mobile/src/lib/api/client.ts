@@ -24,12 +24,36 @@ export function setAccessToken(token: string | null): void {
 }
 
 /**
+ * Returns the configured base API URL without trailing slash or /v1 suffix.
+ */
+export function getApiBaseUrl(): string {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+  }
+  return 'http://localhost:3000';
+}
+
+/**
+ * Resolves an API path or full URL ensuring proper /v1 prefixing.
+ */
+export function resolveUrl(url: string, base: string = getApiBaseUrl()): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  const cleanBase = base.replace(/\/+$/, '');
+  let path = url.startsWith('/') ? url : `/${url}`;
+  if (!path.startsWith('/v1/') && path !== '/v1') {
+    path = `/v1${path}`;
+  }
+  return `${cleanBase}${path}`;
+}
+
+/**
  * Single-flight token refresh mutex (L-33, FR-04).
  * If multiple requests fail with 401, only one refresh call is sent.
  */
-export async function refreshAccessToken(
-  apiBaseUrl = 'http://localhost:3000',
-): Promise<string | null> {
+export async function refreshAccessToken(apiBaseUrl = getApiBaseUrl()): Promise<string | null> {
   if (refreshPromise) {
     return refreshPromise;
   }
@@ -42,7 +66,7 @@ export async function refreshAccessToken(
         return null;
       }
 
-      const res = await fetch(`${apiBaseUrl}/v1/auth/refresh`, {
+      const res = await fetch(resolveUrl('/auth/refresh', apiBaseUrl), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
@@ -88,7 +112,7 @@ export async function handleLogout(): Promise<void> {
  * - If network error occurs, opens in offline mode using lastUserId without logging out.
  * - Only 401 logs the user out.
  */
-export async function initializeAuth(apiBaseUrl = 'http://localhost:3000'): Promise<{
+export async function initializeAuth(apiBaseUrl = getApiBaseUrl()): Promise<{
   status: 'authenticated' | 'offline' | 'unauthenticated';
   userId: string | null;
 }> {
@@ -100,7 +124,7 @@ export async function initializeAuth(apiBaseUrl = 'http://localhost:3000'): Prom
   }
 
   try {
-    const res = await fetch(`${apiBaseUrl}/v1/auth/refresh`, {
+    const res = await fetch(resolveUrl('/auth/refresh', apiBaseUrl), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -153,7 +177,7 @@ export async function initializeAuth(apiBaseUrl = 'http://localhost:3000'): Prom
 export async function apiFetch<T>(
   url: string,
   options: ApiFetchOptions = {},
-  apiBaseUrl = 'http://localhost:3000',
+  apiBaseUrl = getApiBaseUrl(),
 ): Promise<T> {
   const headers = new Headers(options.headers);
 
@@ -164,7 +188,7 @@ export async function apiFetch<T>(
     headers.set('content-type', 'application/json');
   }
 
-  const targetUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
+  const targetUrl = resolveUrl(url, apiBaseUrl);
 
   let res = await fetch(targetUrl, {
     ...options,
@@ -194,3 +218,31 @@ export async function apiFetch<T>(
 
   return res.json() as Promise<T>;
 }
+
+/**
+ * Typed convenience REST API methods.
+ */
+export const api = {
+  get: <T>(url: string, options?: ApiFetchOptions) =>
+    apiFetch<T>(url, { ...options, method: 'GET' }),
+  post: <T>(url: string, body?: unknown, options?: ApiFetchOptions) =>
+    apiFetch<T>(url, {
+      ...options,
+      method: 'POST',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  put: <T>(url: string, body?: unknown, options?: ApiFetchOptions) =>
+    apiFetch<T>(url, {
+      ...options,
+      method: 'PUT',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  patch: <T>(url: string, body?: unknown, options?: ApiFetchOptions) =>
+    apiFetch<T>(url, {
+      ...options,
+      method: 'PATCH',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  delete: <T>(url: string, options?: ApiFetchOptions) =>
+    apiFetch<T>(url, { ...options, method: 'DELETE' }),
+};

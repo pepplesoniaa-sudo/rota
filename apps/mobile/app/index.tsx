@@ -1,103 +1,87 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
+import { initializeAuth } from '../src/lib/api/client';
 import { useTheme } from '../src/ui/theme';
-import { TeamSwitcher } from '../src/ui/components/TeamSwitcher';
-import { useAppStore } from '../src/lib/state/app-store';
 
 /**
- * Root HomeScreen for Rota Mobile (PRD 5.12).
- * Displays active team context, offline capabilities, and shift overview.
+ * Entry Gatekeeper Screen for Rota Mobile (PRD 5.12).
+ * Inspects persisted credentials on cold start (FR-32):
+ * - If session is valid or offline cache exists -> routes to /(tabs)/schedule
+ * - If unauthenticated -> routes to /(auth)/login
  */
-export default function HomeScreen() {
+export default function AppEntryScreen(): React.JSX.Element {
   const { theme } = useTheme();
-  const isOnline = useAppStore((state) => state.isOnline);
-  const activeTeamId = useAppStore((state) => state.activeTeamId);
+  const router = useRouter();
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkAuthSession() {
+      try {
+        const { status } = await initializeAuth();
+        if (!isMounted) return;
+
+        if (status === 'authenticated' || status === 'offline') {
+          router.replace('/(tabs)/schedule');
+        } else {
+          router.replace('/(auth)/login');
+        }
+      } catch {
+        if (isMounted) {
+          router.replace('/(auth)/login');
+        }
+      } finally {
+        if (isMounted) {
+          setIsInitializing(false);
+        }
+      }
+    }
+
+    void checkAuthSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.color.surface }]}
-      contentContainerStyle={styles.content}
-    >
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: theme.color.surface }]}>
+      <View style={styles.brandingBox}>
         <Text style={[styles.title, { color: theme.color.primary }]}>Rota</Text>
         <Text style={[styles.subtitle, { color: theme.color.onSurfaceVariant }]}>
           Shift Scheduling for Modern Teams
         </Text>
       </View>
-
-      <TeamSwitcher />
-
-      <View style={[styles.card, { backgroundColor: theme.color.surfaceContainer }]}>
-        <Text style={[styles.cardTitle, { color: theme.color.onSurface }]}>
-          {activeTeamId ? 'Team Schedule' : 'Welcome to Rota'}
-        </Text>
-        <Text style={[styles.cardBody, { color: theme.color.onSurfaceVariant }]}>
-          {activeTeamId
-            ? 'Your team shifts are synchronized and available for offline viewing.'
-            : 'Select or switch teams above to view published schedules, request swaps, or manage shifts.'}
-        </Text>
-        <View style={styles.statusRow}>
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: isOnline ? theme.color.success : theme.color.outline },
-            ]}
-          />
-          <Text style={[styles.statusText, { color: theme.color.onSurfaceVariant }]}>
-            {isOnline ? 'Online • Auto-syncing' : 'Offline • Reading cached data'}
-          </Text>
-        </View>
-      </View>
-    </ScrollView>
+      {isInitializing && (
+        <ActivityIndicator size="large" color={theme.color.primary} style={styles.spinner} />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  header: {
-    paddingVertical: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  card: {
-    padding: 20,
-    borderRadius: 16,
-    gap: 12,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  cardBody: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  statusRow: {
-    flexDirection: 'row',
+  brandingBox: {
     alignItems: 'center',
     gap: 8,
-    marginTop: 8,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  title: {
+    fontSize: 40,
+    fontWeight: '800',
+    letterSpacing: -1,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  spinner: {
+    marginTop: 32,
   },
 });

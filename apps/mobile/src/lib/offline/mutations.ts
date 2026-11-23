@@ -21,9 +21,9 @@ export function assertOnline(actionName?: string): void {
   }
 }
 
-export interface OptimisticMutationOptions<TData, TVariables> {
+export interface OptimisticMutationOptions<TData, TVariables, TResult = unknown> {
   queryKey: readonly unknown[];
-  mutationFn: (variables: TVariables) => Promise<TData>;
+  mutationFn: (variables: TVariables) => Promise<TResult>;
   updateCache: (oldData: TData | undefined, variables: TVariables) => TData;
   actionName?: string;
 }
@@ -31,8 +31,8 @@ export interface OptimisticMutationOptions<TData, TVariables> {
 /**
  * Creates an optimistic mutation with automatic rollback on error (FR-33, Exit criteria 1).
  */
-export function createOptimisticMutation<TData, TVariables>(
-  options: OptimisticMutationOptions<TData, TVariables>,
+export function createOptimisticMutation<TData, TVariables, TResult = unknown>(
+  options: OptimisticMutationOptions<TData, TVariables, TResult>,
 ) {
   const { queryKey, mutationFn, updateCache, actionName } = options;
 

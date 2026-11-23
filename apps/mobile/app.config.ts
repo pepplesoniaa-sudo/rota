@@ -14,6 +14,9 @@ export default (): ExpoConfig => ({
   android: {
     package: 'com.rota.mobile',
   },
+  web: {
+    bundler: 'metro',
+  },
   plugins: [
     'expo-router',
     'expo-secure-store',
